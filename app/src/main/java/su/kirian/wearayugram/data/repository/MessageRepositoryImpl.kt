@@ -18,10 +18,12 @@ import org.drinkless.tdlib.TdApi
 import su.kirian.wearayugram.Constants
 import su.kirian.wearayugram.R
 import su.kirian.wearayugram.ayugram.AntiRevokeManager
+import su.kirian.wearayugram.ayugram.AyugramSettings
 import su.kirian.wearayugram.ayugram.DeleteNotifyManager
 import su.kirian.wearayugram.ayugram.GhostModeManager
 import su.kirian.wearayugram.data.local.AppDatabase
 import su.kirian.wearayugram.data.local.DeletedMessage
+import su.kirian.wearayugram.data.tdlib.FileDownloader
 import su.kirian.wearayugram.data.tdlib.TelegramClient
 import su.kirian.wearayugram.data.tdlib.toDomain
 import su.kirian.wearayugram.domain.model.MessageContent
@@ -32,6 +34,7 @@ class MessageRepositoryImpl(
     private val client: TelegramClient,
     private val context: Context,
     private val database: AppDatabase,
+    private val fileDownloader: FileDownloader,
 ) : MessageRepository {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -206,6 +209,34 @@ class MessageRepositoryImpl(
             this.inputMessageContent = voiceNote
         }
         client.send(request)
+    }
+
+    override suspend fun downloadPhoto(chatId: Long, messageId: Long): String? {
+        val flow = flows[chatId] ?: return null
+        val photo = flow.value.firstOrNull { it.id == messageId }
+            ?.content as? MessageContent.Photo ?: return null
+        photo.localPath?.let { return it }
+
+        val path = fileDownloader.download(photo.fileId) ?: return null
+        // The bubble observes this flow, so updating localPath re-renders it.
+        flow.update { list ->
+            list.map { msg ->
+                if (msg.id == messageId && msg.content is MessageContent.Photo)
+                    msg.copy(content = msg.content.copy(localPath = path))
+                else msg
+            }
+        }
+        return path
+    }
+
+    override suspend fun downloadPhotoFull(chatId: Long, messageId: Long): String? {
+        val photo = flows[chatId]?.value?.firstOrNull { it.id == messageId }
+            ?.content as? MessageContent.Photo ?: return null
+        val fileId =
+            if (AyugramSettings.isLowRamDevice || photo.fullFileId == 0) photo.fileId
+            else photo.fullFileId
+        // Fall back to the already-downloaded chat-size file rather than nothing.
+        return fileDownloader.download(fileId) ?: photo.localPath
     }
 
     override suspend fun markAsRead(chatId: Long, messageIds: LongArray) {

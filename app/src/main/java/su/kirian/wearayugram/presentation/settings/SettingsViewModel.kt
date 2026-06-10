@@ -2,10 +2,14 @@ package su.kirian.wearayugram.presentation.settings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import org.drinkless.tdlib.TdApi
 import su.kirian.wearayugram.ayugram.AyugramSettings
+import su.kirian.wearayugram.data.tdlib.TelegramClient
 
 class SettingsViewModel : ViewModel() {
 
@@ -21,8 +25,36 @@ class SettingsViewModel : ViewModel() {
     val localPremium = AyugramSettings.localPremium()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
+    val photoAutoload = AyugramSettings.photoAutoload()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    // null = idle, false = clearing, true = done (label feedback)
+    private val _cacheCleared = MutableStateFlow<Boolean?>(null)
+    val cacheCleared = _cacheCleared.asStateFlow()
+
     fun setGhostMode(v: Boolean) = viewModelScope.launch { AyugramSettings.setGhostMode(v) }
     fun setAntiRevoke(v: Boolean) = viewModelScope.launch { AyugramSettings.setAntiRevoke(v) }
     fun setDeleteNotify(v: Boolean) = viewModelScope.launch { AyugramSettings.setDeleteNotify(v) }
     fun setLocalPremium(v: Boolean) = viewModelScope.launch { AyugramSettings.setLocalPremium(v) }
+    fun setPhotoAutoload(v: Boolean) = viewModelScope.launch { AyugramSettings.setPhotoAutoload(v) }
+
+    fun clearMediaCache() {
+        if (_cacheCleared.value == false) return
+        _cacheCleared.value = false
+        viewModelScope.launch {
+            // size=0 + ttl=0 + immunityDelay=0: delete every deletable cached file
+            // right away. TDLib never touches files that are currently in use, and
+            // empty fileTypes/chatIds means "all".
+            runCatching {
+                TelegramClient.get().send(
+                    TdApi.OptimizeStorage(
+                        0, 0, 0, 0,
+                        emptyArray(), LongArray(0), LongArray(0),
+                        false, 0
+                    )
+                )
+            }
+            _cacheCleared.value = true
+        }
+    }
 }

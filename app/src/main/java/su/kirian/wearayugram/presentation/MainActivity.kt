@@ -22,6 +22,7 @@ import su.kirian.wearayugram.presentation.auth.CodeAuthScreen
 import su.kirian.wearayugram.presentation.auth.PhoneAuthScreen
 import su.kirian.wearayugram.presentation.auth.QrAuthScreen
 import su.kirian.wearayugram.presentation.chat.ChatScreen
+import su.kirian.wearayugram.presentation.chat.PhotoViewScreen
 import su.kirian.wearayugram.presentation.chatlist.ChatListScreen
 import su.kirian.wearayugram.presentation.proxy.ProxySettingsScreen
 import su.kirian.wearayugram.presentation.settings.SettingsScreen
@@ -83,6 +84,11 @@ fun WearApp() {
             composable(Routes.CHAT) { backStack ->
                 val chatId = backStack.arguments?.getString("chatId")?.toLongOrNull() ?: return@composable
                 ChatScreen(navController, chatId)
+            }
+            composable(Routes.PHOTO_VIEW) { backStack ->
+                val chatId = backStack.arguments?.getString("chatId")?.toLongOrNull() ?: return@composable
+                val messageId = backStack.arguments?.getString("messageId")?.toLongOrNull() ?: return@composable
+                PhotoViewScreen(navController, chatId, messageId)
             }
             composable(Routes.SETTINGS) {
                 SettingsScreen()

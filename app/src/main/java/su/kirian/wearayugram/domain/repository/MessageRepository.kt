@@ -9,5 +9,9 @@ interface MessageRepository {
     suspend fun sendText(chatId: Long, text: String)
     suspend fun sendVoice(chatId: Long, filePath: String, durationSeconds: Int)
     suspend fun markAsRead(chatId: Long, messageIds: LongArray)
+    /** Downloads the chat-size photo of the message and returns the local path. */
+    suspend fun downloadPhoto(chatId: Long, messageId: Long): String?
+    /** Downloads the fullscreen-size photo (chat-size on low-RAM devices). */
+    suspend fun downloadPhotoFull(chatId: Long, messageId: Long): String?
     fun setOpenChat(chatId: Long)
 }

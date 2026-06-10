@@ -8,6 +8,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
 import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
+import androidx.wear.compose.material3.FilledTonalButton
 import androidx.wear.compose.material3.ListHeader
 import androidx.wear.compose.material3.ScreenScaffold
 import androidx.wear.compose.material3.SwitchButton
@@ -20,6 +21,8 @@ fun SettingsScreen() {
     val antiRevoke by vm.antiRevoke.collectAsStateWithLifecycle()
     val deleteNotify by vm.deleteNotify.collectAsStateWithLifecycle()
     val localPremium by vm.localPremium.collectAsStateWithLifecycle()
+    val photoAutoload by vm.photoAutoload.collectAsStateWithLifecycle()
+    val cacheCleared by vm.cacheCleared.collectAsStateWithLifecycle()
 
     val listState = rememberTransformingLazyColumnState()
 
@@ -59,6 +62,30 @@ fun SettingsScreen() {
                     checked = localPremium,
                     onCheckedChange = vm::setLocalPremium,
                     label = { Text("Local Premium") },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            item {
+                SwitchButton(
+                    checked = photoAutoload,
+                    onCheckedChange = vm::setPhotoAutoload,
+                    label = { Text("Автозагрузка фото") },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            item {
+                FilledTonalButton(
+                    onClick = vm::clearMediaCache,
+                    enabled = cacheCleared != false,
+                    label = {
+                        Text(
+                            when (cacheCleared) {
+                                null -> "Очистить кэш медиа"
+                                false -> "Очистка..."
+                                true -> "Кэш очищен ✓"
+                            }
+                        )
+                    },
                     modifier = Modifier.fillMaxWidth(),
                 )
             }

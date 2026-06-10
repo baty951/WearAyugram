@@ -66,11 +66,24 @@ private fun TdApi.MessageContent.toDomainContent(): MessageContent = when (this)
         localPath = voiceNote.voice.local.path
             .takeIf { voiceNote.voice.local.isDownloadingCompleted }
     )
-    is TdApi.MessagePhoto -> MessageContent.Photo(
-        caption = caption?.text ?: "",
-        localPath = photo.sizes.lastOrNull()?.photo?.local?.path
-            ?.takeIf { photo.sizes.lastOrNull()?.photo?.local?.isDownloadingCompleted == true }
-    )
+    is TdApi.MessagePhoto -> {
+        // Watch screens are ~450px: the smallest size >= 320 ("m") is enough for the
+        // bubble; >= 800 ("x") for the fullscreen viewer. lastOrNull() would pick the
+        // original-size variant — megabytes over the watch's connection.
+        val sorted = photo.sizes.sortedBy { it.width }
+        val chatSize = sorted.firstOrNull { it.width >= 320 } ?: sorted.lastOrNull()
+        val fullSize = sorted.firstOrNull { it.width >= 800 } ?: sorted.lastOrNull()
+        MessageContent.Photo(
+            caption = caption?.text ?: "",
+            fileId = chatSize?.photo?.id ?: 0,
+            fullFileId = fullSize?.photo?.id ?: 0,
+            width = chatSize?.width ?: 0,
+            height = chatSize?.height ?: 0,
+            miniThumb = photo.minithumbnail?.data,
+            localPath = chatSize?.photo?.local?.path
+                ?.takeIf { chatSize.photo.local.isDownloadingCompleted }
+        )
+    }
     is TdApi.MessageSticker -> MessageContent.Sticker(
         emoji = sticker.emoji,
         localPath = sticker.sticker.local.path

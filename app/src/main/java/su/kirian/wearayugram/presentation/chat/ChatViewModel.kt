@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import su.kirian.wearayugram.WearAyugramApp
+import su.kirian.wearayugram.ayugram.AyugramSettings
 import su.kirian.wearayugram.domain.model.TgMessage
 
 class ChatViewModel(app: Application, savedState: SavedStateHandle) : AndroidViewModel(app) {
@@ -19,6 +20,9 @@ class ChatViewModel(app: Application, savedState: SavedStateHandle) : AndroidVie
 
     val messages: StateFlow<List<TgMessage>> = msgRepo.messages(chatId)
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    val photoAutoload: StateFlow<Boolean> = AyugramSettings.photoAutoload()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     init {
         msgRepo.setOpenChat(chatId)
@@ -45,5 +49,9 @@ class ChatViewModel(app: Application, savedState: SavedStateHandle) : AndroidVie
 
     fun markRead(messageIds: LongArray) {
         viewModelScope.launch { msgRepo.markAsRead(chatId, messageIds) }
+    }
+
+    fun downloadPhoto(messageId: Long) {
+        viewModelScope.launch { msgRepo.downloadPhoto(chatId, messageId) }
     }
 }

@@ -21,7 +21,18 @@ data class TgMessage(
 sealed class MessageContent {
     data class Text(val text: String) : MessageContent()
     data class Voice(val durationSeconds: Int, val localPath: String?) : MessageContent()
-    data class Photo(val caption: String, val localPath: String?) : MessageContent()
+    // width/height are the dimensions of the chat-size variant: the bubble draws a
+    // placeholder with the same aspect ratio so item height doesn't jump on load.
+    @Suppress("ArrayInDataClass")
+    data class Photo(
+        val caption: String,
+        val fileId: Int,
+        val fullFileId: Int,
+        val width: Int,
+        val height: Int,
+        val miniThumb: ByteArray?,
+        val localPath: String?,
+    ) : MessageContent()
     data class Sticker(val emoji: String, val localPath: String?) : MessageContent()
     data class Document(val fileName: String, val mimeType: String) : MessageContent()
     data object Unsupported : MessageContent()

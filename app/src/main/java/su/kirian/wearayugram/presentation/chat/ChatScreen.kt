@@ -4,13 +4,17 @@ import android.Manifest
 import android.app.Activity
 import android.app.RemoteInput
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -25,13 +29,17 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -56,6 +64,7 @@ import androidx.wear.compose.material3.ScreenScaffold
 import androidx.wear.compose.material3.Text
 import androidx.wear.input.RemoteInputIntentHelper
 import su.kirian.wearayugram.WearAyugramApp
+import su.kirian.wearayugram.presentation.Routes
 import su.kirian.wearayugram.domain.model.MessageContent
 import su.kirian.wearayugram.domain.model.TgMessage
 import java.text.SimpleDateFormat
@@ -189,13 +198,26 @@ fun ChatScreen(navController: NavController, chatId: Long) {
             }
         }
     ) { contentPadding ->
+        val photoAutoload by viewModel.photoAutoload.collectAsStateWithLifecycle()
         LazyColumn(
             state = listState,
             contentPadding = contentPadding,
             modifier = Modifier.fillMaxSize()
         ) {
             items(messages, key = { it.id }) { message ->
-                MessageBubble(message = message)
+                val content = message.content
+                // Deleted photos keep the textual "🚫 медиа" bubble.
+                if (content is MessageContent.Photo && !message.deletedLocally) {
+                    PhotoBubble(
+                        message = message,
+                        photo = content,
+                        autoload = photoAutoload,
+                        onDownload = { viewModel.downloadPhoto(message.id) },
+                        onOpen = { navController.navigate(Routes.photoView(chatId, message.id)) },
+                    )
+                } else {
+                    MessageBubble(message = message)
+                }
             }
         }
     }
@@ -277,6 +299,96 @@ private fun MessageBubble(message: TgMessage) {
             .background(bubbleColor)
             .padding(horizontal = 12.dp, vertical = 7.dp)
     )
+}
+
+@Composable
+private fun PhotoBubble(
+    message: TgMessage,
+    photo: MessageContent.Photo,
+    autoload: Boolean,
+    onDownload: () -> Unit,
+    onOpen: () -> Unit,
+) {
+    val isOut = message.isOutgoing
+    val cs = MaterialTheme.colorScheme
+
+    // FileDownloader dedups by fileId, so firing again after recomposition is cheap.
+    // Lazy items only compose when visible — exactly the download set we want.
+    LaunchedEffect(photo.localPath, autoload) {
+        if (photo.localPath == null && autoload) onDownload()
+    }
+
+    // Bubble is ~screen width minus paddings; on a ~200dp watch face 160dp is enough.
+    val targetWidthPx = with(LocalDensity.current) { 160.dp.roundToPx() }
+    val bitmap by produceState<Bitmap?>(initialValue = null, photo.localPath) {
+        value = photo.localPath?.let { PhotoDecoder.decode(it, targetWidthPx) }
+    }
+    val mini = remember(message.id) {
+        photo.miniThumb?.let { PhotoDecoder.decodeMiniThumb(it) }
+    }
+    // Same aspect ratio before and after load keeps the item height stable, so the
+    // list doesn't jump when the real photo arrives. Clamped so extreme panoramas
+    // and tall crops don't produce degenerate bubbles.
+    val aspect = if (photo.width > 0 && photo.height > 0)
+        (photo.width.toFloat() / photo.height).coerceIn(0.6f, 2f) else 1f
+
+    val textColor = if (isOut) cs.onPrimaryContainer else cs.onSurface
+    val caption = remember(message) {
+        buildAnnotatedString {
+            if (photo.caption.isNotEmpty()) {
+                withStyle(SpanStyle(color = textColor, fontSize = 13.sp)) {
+                    append(photo.caption)
+                }
+            }
+            withStyle(SpanStyle(color = textColor.copy(alpha = 0.55f), fontSize = 9.sp)) {
+                if (photo.caption.isNotEmpty()) append("  ")
+                append(formatMsgTime(message.date) + if (isOut) " ✓" else "")
+            }
+        }
+    }
+
+    // A raw Column is safe here because the list is a plain LazyColumn; the "single
+    // composable per item" constraint only applies to TransformingLazyColumn.
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(
+                start = if (isOut) 32.dp else 8.dp,
+                end = if (isOut) 8.dp else 32.dp,
+                top = 3.dp,
+                bottom = 3.dp
+            )
+            .clip(RoundedCornerShape(16.dp))
+            .background(if (isOut) cs.primaryContainer else cs.surfaceContainerHigh)
+            .clickable { if (photo.localPath == null) onDownload() else onOpen() }
+    ) {
+        Box(Modifier.fillMaxWidth().aspectRatio(aspect)) {
+            val shown = bitmap ?: mini
+            if (shown != null) {
+                Image(
+                    bitmap = shown.asImageBitmap(),
+                    contentDescription = photo.caption.ifEmpty { "Фото" },
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                )
+            } else {
+                Box(Modifier.fillMaxSize().background(cs.surfaceContainer))
+            }
+            if (photo.localPath == null) {
+                // ⏳ = downloading (autoload), 📥 = tap to download
+                Text(
+                    text = if (autoload) "⏳" else "📥",
+                    fontSize = 20.sp,
+                    modifier = Modifier.align(Alignment.Center),
+                )
+            }
+        }
+        Text(
+            text = caption,
+            lineHeight = 16.sp,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+        )
+    }
 }
 
 // Cached: allocating a SimpleDateFormat per item per recomposition causes GC churn
