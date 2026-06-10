@@ -255,6 +255,23 @@ class MessageRepositoryImpl(
         return path
     }
 
+    override suspend fun downloadVoice(chatId: Long, messageId: Long): String? {
+        val flow = flows[chatId] ?: return null
+        val voice = flow.value.firstOrNull { it.id == messageId }
+            ?.content as? MessageContent.Voice ?: return null
+        voice.localPath?.let { return it }
+
+        val path = fileDownloader.download(voice.fileId) ?: return null
+        flow.update { list ->
+            list.map { msg ->
+                if (msg.id == messageId && msg.content is MessageContent.Voice)
+                    msg.copy(content = msg.content.copy(localPath = path))
+                else msg
+            }
+        }
+        return path
+    }
+
     override suspend fun downloadPhotoFull(chatId: Long, messageId: Long): String? {
         val photo = flows[chatId]?.value?.firstOrNull { it.id == messageId }
             ?.content as? MessageContent.Photo ?: return null

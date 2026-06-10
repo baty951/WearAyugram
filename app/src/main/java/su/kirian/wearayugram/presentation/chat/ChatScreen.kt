@@ -199,6 +199,9 @@ fun ChatScreen(navController: NavController, chatId: Long) {
         }
     ) { contentPadding ->
         val photoAutoload by viewModel.photoAutoload.collectAsStateWithLifecycle()
+        val playingVoiceId by viewModel.playingVoiceId.collectAsStateWithLifecycle()
+        val loadingVoiceId by viewModel.loadingVoiceId.collectAsStateWithLifecycle()
+        val voicePositionSec by viewModel.voicePositionSec.collectAsStateWithLifecycle()
         LazyColumn(
             state = listState,
             contentPadding = contentPadding,
@@ -207,7 +210,16 @@ fun ChatScreen(navController: NavController, chatId: Long) {
             items(messages, key = { it.id }) { message ->
                 val content = message.content
                 // Deleted photos keep the textual "🚫 медиа" bubble.
-                if (content is MessageContent.Photo && !message.deletedLocally) {
+                if (content is MessageContent.Voice && !message.deletedLocally) {
+                    VoiceBubble(
+                        message = message,
+                        voice = content,
+                        isPlaying = playingVoiceId == message.id,
+                        isLoading = loadingVoiceId == message.id,
+                        positionSec = if (playingVoiceId == message.id) voicePositionSec else 0,
+                        onTap = { viewModel.toggleVoice(message) },
+                    )
+                } else if (content is MessageContent.Photo && !message.deletedLocally) {
                     PhotoBubble(
                         message = message,
                         photo = content,
@@ -297,6 +309,70 @@ private fun MessageBubble(message: TgMessage) {
                 )
             )
             .background(bubbleColor)
+            .padding(horizontal = 12.dp, vertical = 7.dp)
+    )
+}
+
+@Composable
+private fun VoiceBubble(
+    message: TgMessage,
+    voice: MessageContent.Voice,
+    isPlaying: Boolean,
+    isLoading: Boolean,
+    positionSec: Int,
+    onTap: () -> Unit,
+) {
+    val isOut = message.isOutgoing
+    val cs = MaterialTheme.colorScheme
+    val textColor = if (isOut) cs.onPrimaryContainer else cs.onSurface
+    val bubbleColor = if (isOut) cs.primaryContainer else cs.surfaceContainerHigh
+
+    // Position ticks every 250ms while playing, so the string is keyed on it too —
+    // the remember is here to avoid rebuilds during plain list scrolling.
+    val annotated = remember(message, isPlaying, isLoading, positionSec) {
+        val body = when {
+            isLoading -> "⏳ ${formatVoiceDuration(voice.durationSeconds)}"
+            isPlaying -> "⏸ ${formatVoiceDuration(positionSec)} / ${formatVoiceDuration(voice.durationSeconds)}"
+            else -> "▶ ${formatVoiceDuration(voice.durationSeconds)}"
+        }
+        buildAnnotatedString {
+            if (!isOut && message.senderName.isNotEmpty()) {
+                withStyle(SpanStyle(color = cs.tertiary, fontWeight = FontWeight.SemiBold, fontSize = 11.sp)) {
+                    append(message.senderName)
+                }
+                append("\n")
+            }
+            withStyle(SpanStyle(color = textColor, fontSize = 14.sp)) {
+                append(body)
+            }
+            withStyle(SpanStyle(color = textColor.copy(alpha = 0.55f), fontSize = 9.sp)) {
+                append("   " + formatMsgTime(message.date) + readMark(message))
+            }
+        }
+    }
+
+    Text(
+        text = annotated,
+        textAlign = if (isOut) TextAlign.End else TextAlign.Start,
+        lineHeight = 17.sp,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(
+                start = if (isOut) 32.dp else 8.dp,
+                end = if (isOut) 8.dp else 32.dp,
+                top = 3.dp,
+                bottom = 3.dp
+            )
+            .clip(
+                RoundedCornerShape(
+                    topStart = 16.dp,
+                    topEnd = 16.dp,
+                    bottomStart = if (isOut) 16.dp else 4.dp,
+                    bottomEnd = if (isOut) 4.dp else 16.dp
+                )
+            )
+            .background(bubbleColor)
+            .clickable(onClick = onTap)
             .padding(horizontal = 12.dp, vertical = 7.dp)
     )
 }
@@ -397,6 +473,9 @@ private val msgTimeFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
 
 private fun formatMsgTime(unixSeconds: Long): String =
     msgTimeFormat.format(Date(unixSeconds * 1000))
+
+private fun formatVoiceDuration(totalSeconds: Int): String =
+    "%d:%02d".format(totalSeconds / 60, totalSeconds % 60)
 
 // ✓ = sent, ✓✓ = read by the recipient (only outgoing messages carry a mark)
 private fun readMark(message: TgMessage): String = when {

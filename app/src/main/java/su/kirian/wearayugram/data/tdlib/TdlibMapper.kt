@@ -64,6 +64,7 @@ private fun TdApi.MessageContent.toDomainContent(): MessageContent = when (this)
     is TdApi.MessageText -> MessageContent.Text(text.text)
     is TdApi.MessageVoiceNote -> MessageContent.Voice(
         durationSeconds = voiceNote.duration,
+        fileId = voiceNote.voice.id,
         localPath = voiceNote.voice.local.path
             .takeIf { voiceNote.voice.local.isDownloadingCompleted }
     )

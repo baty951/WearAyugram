@@ -22,7 +22,11 @@ data class TgMessage(
 @Immutable
 sealed class MessageContent {
     data class Text(val text: String) : MessageContent()
-    data class Voice(val durationSeconds: Int, val localPath: String?) : MessageContent()
+    data class Voice(
+        val durationSeconds: Int,
+        val fileId: Int,
+        val localPath: String?,
+    ) : MessageContent()
     // width/height are the dimensions of the chat-size variant: the bubble draws a
     // placeholder with the same aspect ratio so item height doesn't jump on load.
     @Suppress("ArrayInDataClass")

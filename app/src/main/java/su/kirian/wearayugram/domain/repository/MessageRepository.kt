@@ -13,5 +13,7 @@ interface MessageRepository {
     suspend fun downloadPhoto(chatId: Long, messageId: Long): String?
     /** Downloads the fullscreen-size photo (chat-size on low-RAM devices). */
     suspend fun downloadPhotoFull(chatId: Long, messageId: Long): String?
+    /** Downloads the voice note file of the message and returns the local path. */
+    suspend fun downloadVoice(chatId: Long, messageId: Long): String?
     fun setOpenChat(chatId: Long)
 }
