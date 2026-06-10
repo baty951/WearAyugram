@@ -1,0 +1,26 @@
+# --- Секреты: НИКОГДА не коммитить ---
+secrets.properties
+*.keystore
+*.jks
+# Firebase config содержит API-ключи проекта
+app/google-services.json
+
+# --- Gradle / сборка (build/ на любом уровне) ---
+.gradle/
+build/
+
+# --- IDE ---
+.idea/
+*.iml
+local.properties
+captures/
+.kotlin/
+
+# --- Native build ---
+.externalNativeBuild/
+.cxx/
+
+# --- Прочее ---
+*.log
+*.hprof
+.DS_Store
