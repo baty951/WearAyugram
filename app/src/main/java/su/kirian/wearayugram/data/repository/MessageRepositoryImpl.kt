@@ -43,14 +43,32 @@ class MessageRepositoryImpl(
 
     private var openChatId: Long = -1L
 
+    // chatId -> lastReadOutboxMessageId: outgoing messages with id <= this are read
+    // by the recipient. Seeded from GetChat in loadHistory, kept live by
+    // UpdateChatReadOutbox.
+    private val readOutbox = java.util.concurrent.ConcurrentHashMap<Long, Long>()
+
     override fun setOpenChat(chatId: Long) { openChatId = chatId }
 
     init {
+        client.updatesOf<TdApi.UpdateChatReadOutbox>()
+            .onEach { update ->
+                readOutbox[update.chatId] = update.lastReadOutboxMessageId
+                flows[update.chatId]?.update { list ->
+                    list.map { msg ->
+                        if (msg.isOutgoing && !msg.isRead && msg.id <= update.lastReadOutboxMessageId)
+                            msg.copy(isRead = true)
+                        else msg
+                    }
+                }
+            }
+            .launchIn(scope)
+
         client.updatesOf<TdApi.UpdateNewMessage>()
             .onEach { update ->
                 val chatId = update.message.chatId
                 val name = resolveSenderName(update.message)
-                val domainMsg = update.message.toDomain(name)
+                val domainMsg = update.message.toDomain(name, readOutbox[chatId] ?: 0)
                 val flow = flows.getOrPut(chatId) { MutableStateFlow(emptyList()) }
                 flow.update { it + domainMsg }
                 // Notify for incoming messages not in the currently open chat
@@ -75,8 +93,9 @@ class MessageRepositoryImpl(
                     client.send(TdApi.GetMessage(update.chatId, update.messageId))
                 }.getOrNull() ?: return@onEach
                 val name = resolveSenderName(refreshed)
+                val lastRead = readOutbox[update.chatId] ?: 0
                 flow.update { list ->
-                    list.map { if (it.id == update.messageId) refreshed.toDomain(name) else it }
+                    list.map { if (it.id == update.messageId) refreshed.toDomain(name, lastRead) else it }
                 }
             }
             .launchIn(scope)
@@ -145,6 +164,12 @@ class MessageRepositoryImpl(
         // trigger a server fetch, then retry until a real batch arrives.
         runCatching { client.send(TdApi.OpenChat(chatId)) }
 
+        // Seed the outbox-read watermark so history maps ✓/✓✓ correctly even before
+        // the first UpdateChatReadOutbox arrives.
+        runCatching {
+            readOutbox[chatId] = client.send(TdApi.GetChat(chatId)).lastReadOutboxMessageId
+        }
+
         var rawMessages: Array<TdApi.Message> = emptyArray()
         var attempt = 0
         while (attempt < 8) {
@@ -159,10 +184,11 @@ class MessageRepositoryImpl(
             attempt++
         }
 
+        val lastReadOutbox = readOutbox[chatId] ?: 0
         val messages = rawMessages
             .mapNotNull { msg ->
                 val name = resolveSenderName(msg)
-                runCatching { msg.toDomain(name) }.getOrNull()
+                runCatching { msg.toDomain(name, lastReadOutbox) }.getOrNull()
             }
             .reversed()
 

@@ -268,7 +268,7 @@ private fun MessageBubble(message: TgMessage) {
                 append(bodyText)
             }
             withStyle(SpanStyle(color = timeColor, fontSize = 9.sp)) {
-                append("   " + formatMsgTime(message.date) + if (isOut) " ✓" else "")
+                append("   " + formatMsgTime(message.date) + readMark(message))
             }
         }
     }
@@ -342,7 +342,7 @@ private fun PhotoBubble(
             }
             withStyle(SpanStyle(color = textColor.copy(alpha = 0.55f), fontSize = 9.sp)) {
                 if (photo.caption.isNotEmpty()) append("  ")
-                append(formatMsgTime(message.date) + if (isOut) " ✓" else "")
+                append(formatMsgTime(message.date) + readMark(message))
             }
         }
     }
@@ -397,5 +397,12 @@ private val msgTimeFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
 
 private fun formatMsgTime(unixSeconds: Long): String =
     msgTimeFormat.format(Date(unixSeconds * 1000))
+
+// ✓ = sent, ✓✓ = read by the recipient (only outgoing messages carry a mark)
+private fun readMark(message: TgMessage): String = when {
+    !message.isOutgoing -> ""
+    message.isRead -> " ✓✓"
+    else -> " ✓"
+}
 
 private const val KEY_TEXT = "msg_text"

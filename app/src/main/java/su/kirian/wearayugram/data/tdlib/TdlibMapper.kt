@@ -21,7 +21,7 @@ fun TdApi.Chat.toDomain(): TgChat = TgChat(
     type = type.toChatType()
 )
 
-fun TdApi.Message.toDomain(senderName: String): TgMessage = TgMessage(
+fun TdApi.Message.toDomain(senderName: String, lastReadOutboxMessageId: Long = 0): TgMessage = TgMessage(
     id = id,
     chatId = chatId,
     senderId = (senderId as? TdApi.MessageSenderUser)?.userId ?: 0L,
@@ -29,7 +29,8 @@ fun TdApi.Message.toDomain(senderName: String): TgMessage = TgMessage(
     content = content.toDomainContent(),
     date = date.toLong(),
     isOutgoing = isOutgoing,
-    isEdited = editDate > 0
+    isEdited = editDate > 0,
+    isRead = isOutgoing && id <= lastReadOutboxMessageId
 )
 
 fun TdApi.User.toDomain(): TgUser = TgUser(

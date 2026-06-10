@@ -13,6 +13,8 @@ data class TgMessage(
     val date: Long,
     val isOutgoing: Boolean,
     val isEdited: Boolean,
+    // For outgoing messages: true once the recipient has read it (✓✓ vs ✓)
+    val isRead: Boolean = false,
     // null = never deleted, non-null = deleted locally by anti-revoke
     val deletedLocally: Boolean = false,
 )
