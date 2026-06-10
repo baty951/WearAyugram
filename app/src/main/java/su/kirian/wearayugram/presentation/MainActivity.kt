@@ -25,6 +25,7 @@ import su.kirian.wearayugram.presentation.chat.ChatScreen
 import su.kirian.wearayugram.presentation.chat.PhotoViewScreen
 import su.kirian.wearayugram.presentation.chatlist.ChatListScreen
 import su.kirian.wearayugram.presentation.proxy.ProxySettingsScreen
+import su.kirian.wearayugram.presentation.search.SearchScreen
 import su.kirian.wearayugram.presentation.settings.SettingsScreen
 import su.kirian.wearayugram.presentation.topics.TopicListScreen
 import su.kirian.wearayugram.presentation.theme.WearAyugramTheme
@@ -100,6 +101,9 @@ fun WearApp() {
                 val messageId = backStack.arguments?.getString("messageId")?.toLongOrNull() ?: return@composable
                 val topicId = backStack.arguments?.getString("topicId")?.toIntOrNull() ?: 0
                 PhotoViewScreen(navController, chatId, messageId, topicId)
+            }
+            composable(Routes.SEARCH) {
+                SearchScreen(navController)
             }
             composable(Routes.SETTINGS) {
                 SettingsScreen()

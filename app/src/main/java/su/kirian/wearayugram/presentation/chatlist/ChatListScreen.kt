@@ -30,6 +30,7 @@ import androidx.navigation.NavController
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
 import androidx.wear.compose.foundation.lazy.items
 import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
+import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.EdgeButton
 import androidx.wear.compose.material3.FilledTonalButton
 import androidx.wear.compose.material3.ListHeader
@@ -61,7 +62,16 @@ fun ChatListScreen(navController: NavController) {
         TransformingLazyColumn(state = listState, contentPadding = contentPadding) {
             item {
                 ListHeader(modifier = Modifier.fillMaxWidth()) {
-                    Text("WearAyugram")
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("WearAyugram")
+                        Spacer(Modifier.width(8.dp))
+                        Button(
+                            onClick = { navController.navigate(Routes.SEARCH) },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Text("🔍", style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
                 }
             }
             if (folders.isNotEmpty()) {

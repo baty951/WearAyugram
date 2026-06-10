@@ -9,6 +9,7 @@ object Routes {
     const val TOPICS = "topics/{chatId}"
     const val CHAT_TOPIC = "chat/{chatId}/topic/{topicId}"
     const val PHOTO_VIEW = "photo/{chatId}/{messageId}/{topicId}"
+    const val SEARCH = "search"
     const val SETTINGS      = "settings"
     const val PROXY_SETTINGS = "proxy_settings"
 

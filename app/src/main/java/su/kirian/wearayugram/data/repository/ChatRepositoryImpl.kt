@@ -19,7 +19,9 @@ import su.kirian.wearayugram.data.tdlib.TelegramClient
 import su.kirian.wearayugram.data.tdlib.toDomain
 import su.kirian.wearayugram.domain.model.TgChat
 import su.kirian.wearayugram.domain.model.TgChatFolder
+import su.kirian.wearayugram.domain.model.TgFoundMessage
 import su.kirian.wearayugram.domain.model.TgTopic
+import su.kirian.wearayugram.data.tdlib.toPreviewText
 import su.kirian.wearayugram.domain.repository.ChatRepository
 
 class ChatRepositoryImpl(private val client: TelegramClient) : ChatRepository {
@@ -175,4 +177,39 @@ class ChatRepositoryImpl(private val client: TelegramClient) : ChatRepository {
             client.send(TdApi.GetForumTopics(chatId, "", 0, 0, 0, 100))
                 .topics.map { it.toDomain() }
         }.getOrDefault(emptyList())
+
+    override suspend fun searchChats(query: String): List<TgChat> {
+        if (query.isBlank()) return emptyList()
+        val localIds = runCatching {
+            client.send(TdApi.SearchChats(query, 10)).chatIds.toList()
+        }.getOrDefault(emptyList())
+        // Public username search hits the network; ignore its failure (offline etc.).
+        val publicIds = runCatching {
+            client.send(TdApi.SearchPublicChats(query)).chatIds.toList()
+        }.getOrDefault(emptyList())
+        return (localIds + publicIds).distinct().take(15).mapNotNull { id ->
+            runCatching { client.send(TdApi.GetChat(id)).toDomain() }.getOrNull()
+        }
+    }
+
+    override suspend fun searchMessages(query: String): List<TgFoundMessage> {
+        if (query.isBlank()) return emptyList()
+        val found = runCatching {
+            client.send(TdApi.SearchMessages(null, query, "", 15, null, null, 0, 0))
+        }.getOrNull() ?: return emptyList()
+        val titleCache = mutableMapOf<Long, String>()
+        return found.messages.map { msg ->
+            val title = titleCache.getOrPut(msg.chatId) {
+                runCatching { client.send(TdApi.GetChat(msg.chatId)).title }.getOrDefault("")
+            }
+            TgFoundMessage(
+                chatId = msg.chatId,
+                messageId = msg.id,
+                topicId = (msg.topicId as? TdApi.MessageTopicForum)?.forumTopicId ?: 0,
+                chatTitle = title,
+                preview = msg.content.toPreviewText(),
+                date = msg.date.toLong(),
+            )
+        }
+    }
 }
