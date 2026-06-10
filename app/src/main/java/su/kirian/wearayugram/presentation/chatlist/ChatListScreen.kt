@@ -1,6 +1,9 @@
 package su.kirian.wearayugram.presentation.chatlist
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -10,7 +13,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -41,6 +46,8 @@ import java.util.Locale
 fun ChatListScreen(navController: NavController) {
     val viewModel: ChatListViewModel = viewModel()
     val chats by viewModel.chats.collectAsStateWithLifecycle()
+    val folders by viewModel.folders.collectAsStateWithLifecycle()
+    val selectedFolderId by viewModel.selectedFolderId.collectAsStateWithLifecycle()
     val listState = rememberTransformingLazyColumnState()
 
     ScreenScaffold(
@@ -55,6 +62,32 @@ fun ChatListScreen(navController: NavController) {
             item {
                 ListHeader(modifier = Modifier.fillMaxWidth()) {
                     Text("WearAyugram")
+                }
+            }
+            if (folders.isNotEmpty()) {
+                item {
+                    // ListHeader as the item root: raw Row/Box roots collapse inside
+                    // TransformingLazyColumn (see ChatScreen history), M3 components
+                    // measure correctly. The chip row scrolls horizontally.
+                    ListHeader(modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            modifier = Modifier.horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            FolderChip(
+                                title = "Все",
+                                selected = selectedFolderId == null,
+                                onClick = { viewModel.selectFolder(null) }
+                            )
+                            for (folder in folders) {
+                                FolderChip(
+                                    title = folder.title,
+                                    selected = selectedFolderId == folder.id,
+                                    onClick = { viewModel.selectFolder(folder.id) }
+                                )
+                            }
+                        }
+                    }
                 }
             }
             if (chats.isEmpty()) {
@@ -73,6 +106,21 @@ fun ChatListScreen(navController: NavController) {
             }
         }
     }
+}
+
+@Composable
+private fun FolderChip(title: String, selected: Boolean, onClick: () -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    Text(
+        text = title,
+        style = MaterialTheme.typography.labelSmall,
+        color = if (selected) cs.onPrimary else cs.onSurface,
+        modifier = Modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(if (selected) cs.primary else cs.surfaceContainerHigh)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 4.dp)
+    )
 }
 
 @Composable

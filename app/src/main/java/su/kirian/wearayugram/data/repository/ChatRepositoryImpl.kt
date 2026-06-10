@@ -18,6 +18,7 @@ import org.drinkless.tdlib.TdApi
 import su.kirian.wearayugram.data.tdlib.TelegramClient
 import su.kirian.wearayugram.data.tdlib.toDomain
 import su.kirian.wearayugram.domain.model.TgChat
+import su.kirian.wearayugram.domain.model.TgChatFolder
 import su.kirian.wearayugram.domain.repository.ChatRepository
 
 class ChatRepositoryImpl(private val client: TelegramClient) : ChatRepository {
@@ -27,12 +28,44 @@ class ChatRepositoryImpl(private val client: TelegramClient) : ChatRepository {
     private val _chatList = MutableStateFlow<List<TgChat>>(emptyList())
     override val chatList: Flow<List<TgChat>> = _chatList.asStateFlow()
 
+    private val _folders = MutableStateFlow<List<TgChatFolder>>(emptyList())
+    override val folders: Flow<List<TgChatFolder>> = _folders.asStateFlow()
+
+    private val _selectedFolderId = MutableStateFlow<Int?>(null)
+    override val selectedFolderId: Flow<Int?> = _selectedFolderId.asStateFlow()
+
+    // null = main list. All TDLib list requests below go through this.
+    private fun currentList(): TdApi.ChatList? =
+        _selectedFolderId.value?.let { TdApi.ChatListFolder(it) }
+
+    private fun TdApi.Chat.belongsToCurrentList(): Boolean {
+        val folderId = _selectedFolderId.value
+        return positions.any { pos ->
+            pos.order != 0L && when (val l = pos.list) {
+                is TdApi.ChatListMain -> folderId == null
+                is TdApi.ChatListFolder -> l.chatFolderId == folderId
+                else -> false
+            }
+        }
+    }
+
     // Refresh requests are funnelled through this queue and batched: per incoming
     // message TDLib fires several updates, and refreshing the chat (GetChat + full
     // list copy + recomposition) for each one janks the chat list during scroll.
     private val refreshQueue = Channel<Long>(Channel.UNLIMITED)
 
     init {
+        client.updatesOf<TdApi.UpdateChatFolders>()
+            .onEach { update ->
+                _folders.value = update.chatFolders.map { it.toDomain() }
+                // The shown folder was deleted on another device — fall back to main.
+                val selected = _selectedFolderId.value
+                if (selected != null && update.chatFolders.none { it.id == selected }) {
+                    selectFolder(null)
+                }
+            }
+            .launchIn(scope)
+
         // UpdateChatLastMessage already covers everything UpdateNewMessage signalled
         // for chat-list purposes, so we don't listen to UpdateNewMessage here.
         client.updatesOf<TdApi.UpdateChatLastMessage>()
@@ -72,14 +105,19 @@ class ChatRepositoryImpl(private val client: TelegramClient) : ChatRepository {
                     pending += next
                 }
 
-                val fetched = pending.mapNotNull { id ->
-                    runCatching { client.send(TdApi.GetChat(id)).toDomain() }.getOrNull()
+                val fetchedRaw = pending.mapNotNull { id ->
+                    runCatching { client.send(TdApi.GetChat(id)) }.getOrNull()
                 }
-                if (fetched.isNotEmpty()) {
+                if (fetchedRaw.isNotEmpty()) {
                     _chatList.update { current ->
-                        val byId = fetched.associateBy { it.id }
+                        val byId = fetchedRaw.associate { it.id to it.toDomain() }
                         val updated = current.map { byId[it.id] ?: it }
-                        val newOnes = fetched.filter { f -> current.none { it.id == f.id } }
+                        // Only chats that belong to the shown list may be prepended —
+                        // otherwise a message in any chat would leak it into the
+                        // currently selected folder.
+                        val newOnes = fetchedRaw
+                            .filter { raw -> current.none { it.id == raw.id } && raw.belongsToCurrentList() }
+                            .map { it.toDomain() }
                         newOnes + updated
                     }
                 }
@@ -88,13 +126,29 @@ class ChatRepositoryImpl(private val client: TelegramClient) : ChatRepository {
     }
 
     override suspend fun loadChats(limit: Int) {
-        runCatching { client.send(TdApi.LoadChats(null, limit)) }
-        val result = runCatching { client.send(TdApi.GetChats(null, limit)) }.getOrNull() ?: return
+        val list = currentList()
+        runCatching { client.send(TdApi.LoadChats(list, limit)) }
+        val result = runCatching { client.send(TdApi.GetChats(list, limit)) }.getOrNull() ?: return
         val chats = mutableListOf<TgChat>()
         for (id in result.chatIds) {
             runCatching { client.send(TdApi.GetChat(id)).toDomain() }.getOrNull()?.let { chats.add(it) }
         }
-        _chatList.value = chats
+        // The folder may have been switched while we fetched 30 sequential GetChats —
+        // don't overwrite the new folder's list with stale results.
+        if (list?.let { it as? TdApi.ChatListFolder }?.chatFolderId == _selectedFolderId.value ||
+            (list == null && _selectedFolderId.value == null)
+        ) {
+            _chatList.value = chats
+        }
+    }
+
+    override suspend fun selectFolder(folderId: Int?) {
+        if (_selectedFolderId.value == folderId) return
+        _selectedFolderId.value = folderId
+        // Clear immediately so the UI shows the loading state instead of the
+        // previous folder's chats.
+        _chatList.value = emptyList()
+        loadChats(30)
     }
 
     override suspend fun getChatById(chatId: Long): TgChat? =

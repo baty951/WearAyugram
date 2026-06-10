@@ -6,6 +6,7 @@ import su.kirian.wearayugram.ayugram.LocalPremiumPatcher.withLocalPremium
 import su.kirian.wearayugram.domain.model.ChatType
 import su.kirian.wearayugram.domain.model.MessageContent
 import su.kirian.wearayugram.domain.model.TgChat
+import su.kirian.wearayugram.domain.model.TgChatFolder
 import su.kirian.wearayugram.domain.model.TgMessage
 import su.kirian.wearayugram.domain.model.TgUser
 
@@ -31,6 +32,11 @@ fun TdApi.Message.toDomain(senderName: String, lastReadOutboxMessageId: Long = 0
     isOutgoing = isOutgoing,
     isEdited = editDate > 0,
     isRead = isOutgoing && id <= lastReadOutboxMessageId
+)
+
+fun TdApi.ChatFolderInfo.toDomain(): TgChatFolder = TgChatFolder(
+    id = id,
+    title = name?.text?.text ?: ""
 )
 
 fun TdApi.User.toDomain(): TgUser = TgUser(
