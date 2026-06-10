@@ -72,14 +72,17 @@ import java.util.Date
 import java.util.Locale
 
 @Composable
-fun ChatScreen(navController: NavController, chatId: Long) {
+fun ChatScreen(navController: NavController, chatId: Long, topicId: Int = 0) {
     val app = navController.context.applicationContext as WearAyugramApp
     val context = LocalContext.current
     val viewModel: ChatViewModel = viewModel(
+        // Topic and plain chat screens must not share a ViewModel instance.
+        key = "chat_${chatId}_$topicId",
         factory = viewModelFactory {
             initializer {
                 val handle = createSavedStateHandle()
                 handle["chatId"] = chatId
+                handle["topicId"] = topicId
                 ChatViewModel(app, handle)
             }
         }
@@ -225,7 +228,7 @@ fun ChatScreen(navController: NavController, chatId: Long) {
                         photo = content,
                         autoload = photoAutoload,
                         onDownload = { viewModel.downloadPhoto(message.id) },
-                        onOpen = { navController.navigate(Routes.photoView(chatId, message.id)) },
+                        onOpen = { navController.navigate(Routes.photoView(chatId, message.id, topicId)) },
                     )
                 } else {
                     MessageBubble(message = message)

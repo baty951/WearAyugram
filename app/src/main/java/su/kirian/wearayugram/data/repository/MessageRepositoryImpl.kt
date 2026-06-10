@@ -38,8 +38,20 @@ class MessageRepositoryImpl(
 ) : MessageRepository {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val flows = mutableMapOf<Long, MutableStateFlow<List<TgMessage>>>()
+
+    // Keyed by chat + forum topic; topicId 0 = a regular (non-forum) chat. Forum
+    // supergroups get one flow per topic, so each topic screen sees only its thread.
+    private val flows = mutableMapOf<Pair<Long, Int>, MutableStateFlow<List<TgMessage>>>()
     private val dao = database.deletedMessageDao()
+
+    private fun flowOf(chatId: Long, topicId: Int): MutableStateFlow<List<TgMessage>> =
+        synchronized(flows) { flows.getOrPut(chatId to topicId) { MutableStateFlow(emptyList()) } }
+
+    private fun flowsOfChat(chatId: Long): List<MutableStateFlow<List<TgMessage>>> =
+        synchronized(flows) { flows.filterKeys { it.first == chatId }.values.toList() }
+
+    private fun topicOf(message: TdApi.Message): Int =
+        (message.topicId as? TdApi.MessageTopicForum)?.forumTopicId ?: 0
 
     private var openChatId: Long = -1L
 
@@ -54,11 +66,13 @@ class MessageRepositoryImpl(
         client.updatesOf<TdApi.UpdateChatReadOutbox>()
             .onEach { update ->
                 readOutbox[update.chatId] = update.lastReadOutboxMessageId
-                flows[update.chatId]?.update { list ->
-                    list.map { msg ->
-                        if (msg.isOutgoing && !msg.isRead && msg.id <= update.lastReadOutboxMessageId)
-                            msg.copy(isRead = true)
-                        else msg
+                flowsOfChat(update.chatId).forEach { flow ->
+                    flow.update { list ->
+                        list.map { msg ->
+                            if (msg.isOutgoing && !msg.isRead && msg.id <= update.lastReadOutboxMessageId)
+                                msg.copy(isRead = true)
+                            else msg
+                        }
                     }
                 }
             }
@@ -69,7 +83,7 @@ class MessageRepositoryImpl(
                 val chatId = update.message.chatId
                 val name = resolveSenderName(update.message)
                 val domainMsg = update.message.toDomain(name, readOutbox[chatId] ?: 0)
-                val flow = flows.getOrPut(chatId) { MutableStateFlow(emptyList()) }
+                val flow = flowOf(chatId, topicOf(update.message))
                 flow.update { it + domainMsg }
                 // Notify for incoming messages not in the currently open chat
                 if (!update.message.isOutgoing && chatId != openChatId) {
@@ -88,14 +102,17 @@ class MessageRepositoryImpl(
 
         client.updatesOf<TdApi.UpdateMessageEdited>()
             .onEach { update ->
-                val flow = flows[update.chatId] ?: return@onEach
+                val chatFlows = flowsOfChat(update.chatId)
+                if (chatFlows.isEmpty()) return@onEach
                 val refreshed = runCatching {
                     client.send(TdApi.GetMessage(update.chatId, update.messageId))
                 }.getOrNull() ?: return@onEach
                 val name = resolveSenderName(refreshed)
                 val lastRead = readOutbox[update.chatId] ?: 0
-                flow.update { list ->
-                    list.map { if (it.id == update.messageId) refreshed.toDomain(name, lastRead) else it }
+                chatFlows.forEach { flow ->
+                    flow.update { list ->
+                        list.map { if (it.id == update.messageId) refreshed.toDomain(name, lastRead) else it }
+                    }
                 }
             }
             .launchIn(scope)
@@ -106,59 +123,62 @@ class MessageRepositoryImpl(
                 // eviction. Only isPermanent && !fromCache is an actual deletion;
                 // fromCache=true just means TDLib unloaded the messages locally.
                 if (!update.isPermanent || update.fromCache) return@onEach
-                val flow = flows[update.chatId] ?: return@onEach
+                val chatFlows = flowsOfChat(update.chatId)
+                if (chatFlows.isEmpty()) return@onEach
                 val antiRevoke = runCatching { AntiRevokeManager.isEnabled.first() }.getOrDefault(true)
                 val deleteNotify = runCatching { DeleteNotifyManager.isEnabled.first() }.getOrDefault(true)
                 val deleted = update.messageIds.toHashSet()
 
-                flow.update { list ->
-                    list.map { msg ->
-                        if (msg.id !in deleted) return@map msg
-                        // Save to Room for anti-revoke
-                        if (antiRevoke) {
-                            val originalText = when (val c = msg.content) {
-                                is MessageContent.Text -> c.text
-                                else -> "[медиа]"
-                            }
-                            scope.launch {
-                                dao.insert(
-                                    DeletedMessage(
-                                        id = msg.id,
-                                        chatId = msg.chatId,
-                                        text = originalText,
-                                        senderName = msg.senderName,
-                                        date = msg.date,
-                                    )
-                                )
-                            }
-                            // Send delete notification if incoming and not in open chat
-                            if (deleteNotify && !msg.isOutgoing && msg.chatId != openChatId) {
-                                val originalText2 = when (val c = msg.content) {
+                chatFlows.forEach { flow ->
+                    flow.update { list ->
+                        list.map { msg ->
+                            if (msg.id !in deleted) return@map msg
+                            // Save to Room for anti-revoke
+                            if (antiRevoke) {
+                                val originalText = when (val c = msg.content) {
                                     is MessageContent.Text -> c.text
                                     else -> "[медиа]"
                                 }
-                                showDeleteNotification(msg.senderName, originalText2)
+                                scope.launch {
+                                    dao.insert(
+                                        DeletedMessage(
+                                            id = msg.id,
+                                            chatId = msg.chatId,
+                                            text = originalText,
+                                            senderName = msg.senderName,
+                                            date = msg.date,
+                                        )
+                                    )
+                                }
+                                // Send delete notification if incoming and not in open chat
+                                if (deleteNotify && !msg.isOutgoing && msg.chatId != openChatId) {
+                                    val originalText2 = when (val c = msg.content) {
+                                        is MessageContent.Text -> c.text
+                                        else -> "[медиа]"
+                                    }
+                                    showDeleteNotification(msg.senderName, originalText2)
+                                }
+                                // Mark as deleted locally — keep in list with flag
+                                msg.copy(deletedLocally = true)
+                            } else {
+                                null // will be filtered below
                             }
-                            // Mark as deleted locally — keep in list with flag
-                            msg.copy(deletedLocally = true)
-                        } else {
-                            null // will be filtered below
-                        }
-                    }.filterNotNull()
-                }
+                        }.filterNotNull()
+                    }
 
-                // If anti-revoke disabled, remove messages normally
-                if (!antiRevoke) {
-                    flow.update { list -> list.filter { it.id !in deleted } }
+                    // If anti-revoke disabled, remove messages normally
+                    if (!antiRevoke) {
+                        flow.update { list -> list.filter { it.id !in deleted } }
+                    }
                 }
             }
             .launchIn(scope)
     }
 
-    override fun messages(chatId: Long): Flow<List<TgMessage>> =
-        flows.getOrPut(chatId) { MutableStateFlow(emptyList()) }.asStateFlow()
+    override fun messages(chatId: Long, topicId: Int): Flow<List<TgMessage>> =
+        flowOf(chatId, topicId).asStateFlow()
 
-    override suspend fun loadHistory(chatId: Long, fromMessageId: Long, limit: Int) {
+    override suspend fun loadHistory(chatId: Long, fromMessageId: Long, limit: Int, topicId: Int) {
         // TDLib's GetChatHistory only returns messages already in its local DB.
         // On first open only the last message is cached, so we must OpenChat to
         // trigger a server fetch, then retry until a real batch arrives.
@@ -174,7 +194,10 @@ class MessageRepositoryImpl(
         var attempt = 0
         while (attempt < 8) {
             val result = runCatching {
-                client.send(TdApi.GetChatHistory(chatId, fromMessageId, 0, limit, false))
+                if (topicId != 0)
+                    client.send(TdApi.GetForumTopicHistory(chatId, topicId, fromMessageId, 0, limit))
+                else
+                    client.send(TdApi.GetChatHistory(chatId, fromMessageId, 0, limit, false))
             }.getOrNull()
             val msgs = result?.messages ?: emptyArray()
             if (msgs.size > rawMessages.size) rawMessages = msgs
@@ -197,7 +220,7 @@ class MessageRepositoryImpl(
             dao.getForChat(chatId).first().associateBy { it.id }
         }.getOrDefault(emptyMap())
 
-        val flow = flows.getOrPut(chatId) { MutableStateFlow(emptyList()) }
+        val flow = flowOf(chatId, topicId)
         flow.update { existing ->
             val existingIds = existing.map { it.id }.toHashSet()
             val merged = messages.map { msg ->
@@ -207,7 +230,7 @@ class MessageRepositoryImpl(
         }
     }
 
-    override suspend fun sendText(chatId: Long, text: String) {
+    override suspend fun sendText(chatId: Long, text: String, topicId: Int) {
         val formatted = TdApi.FormattedText().apply {
             this.text = text
             this.entities = emptyArray()
@@ -218,12 +241,13 @@ class MessageRepositoryImpl(
         }
         val request = TdApi.SendMessage().apply {
             this.chatId = chatId
+            if (topicId != 0) this.topicId = TdApi.MessageTopicForum(topicId)
             this.inputMessageContent = content
         }
         client.send(request)
     }
 
-    override suspend fun sendVoice(chatId: Long, filePath: String, durationSeconds: Int) {
+    override suspend fun sendVoice(chatId: Long, filePath: String, durationSeconds: Int, topicId: Int) {
         val inputFile = TdApi.InputFileLocal(filePath)
         val voiceNote = TdApi.InputMessageVoiceNote().apply {
             this.voiceNote = inputFile
@@ -232,13 +256,14 @@ class MessageRepositoryImpl(
         }
         val request = TdApi.SendMessage().apply {
             this.chatId = chatId
+            if (topicId != 0) this.topicId = TdApi.MessageTopicForum(topicId)
             this.inputMessageContent = voiceNote
         }
         client.send(request)
     }
 
-    override suspend fun downloadPhoto(chatId: Long, messageId: Long): String? {
-        val flow = flows[chatId] ?: return null
+    override suspend fun downloadPhoto(chatId: Long, messageId: Long, topicId: Int): String? {
+        val flow = flowOf(chatId, topicId)
         val photo = flow.value.firstOrNull { it.id == messageId }
             ?.content as? MessageContent.Photo ?: return null
         photo.localPath?.let { return it }
@@ -255,8 +280,8 @@ class MessageRepositoryImpl(
         return path
     }
 
-    override suspend fun downloadVoice(chatId: Long, messageId: Long): String? {
-        val flow = flows[chatId] ?: return null
+    override suspend fun downloadVoice(chatId: Long, messageId: Long, topicId: Int): String? {
+        val flow = flowOf(chatId, topicId)
         val voice = flow.value.firstOrNull { it.id == messageId }
             ?.content as? MessageContent.Voice ?: return null
         voice.localPath?.let { return it }
@@ -272,8 +297,8 @@ class MessageRepositoryImpl(
         return path
     }
 
-    override suspend fun downloadPhotoFull(chatId: Long, messageId: Long): String? {
-        val photo = flows[chatId]?.value?.firstOrNull { it.id == messageId }
+    override suspend fun downloadPhotoFull(chatId: Long, messageId: Long, topicId: Int): String? {
+        val photo = flowOf(chatId, topicId).value.firstOrNull { it.id == messageId }
             ?.content as? MessageContent.Photo ?: return null
         val fileId =
             if (AyugramSettings.isLowRamDevice || photo.fullFileId == 0) photo.fileId

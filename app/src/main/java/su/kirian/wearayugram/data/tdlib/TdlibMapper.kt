@@ -8,6 +8,7 @@ import su.kirian.wearayugram.domain.model.MessageContent
 import su.kirian.wearayugram.domain.model.TgChat
 import su.kirian.wearayugram.domain.model.TgChatFolder
 import su.kirian.wearayugram.domain.model.TgMessage
+import su.kirian.wearayugram.domain.model.TgTopic
 import su.kirian.wearayugram.domain.model.TgUser
 
 fun TdApi.Chat.toDomain(): TgChat = TgChat(
@@ -32,6 +33,17 @@ fun TdApi.Message.toDomain(senderName: String, lastReadOutboxMessageId: Long = 0
     isOutgoing = isOutgoing,
     isEdited = editDate > 0,
     isRead = isOutgoing && id <= lastReadOutboxMessageId
+)
+
+fun TdApi.ForumTopic.toDomain(): TgTopic = TgTopic(
+    id = info.forumTopicId,
+    chatId = info.chatId,
+    title = info.name,
+    unreadCount = unreadCount,
+    lastMessage = lastMessage?.content?.toPreviewText(),
+    lastMessageTime = lastMessage?.date?.toLong() ?: 0L,
+    isPinned = isPinned,
+    isGeneral = info.isGeneral,
 )
 
 fun TdApi.ChatFolderInfo.toDomain(): TgChatFolder = TgChatFolder(

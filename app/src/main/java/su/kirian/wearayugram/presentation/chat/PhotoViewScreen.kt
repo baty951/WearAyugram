@@ -40,13 +40,13 @@ import su.kirian.wearayugram.WearAyugramApp
  * (drag handling is skipped at 1x so the dismiss gesture stays reachable).
  */
 @Composable
-fun PhotoViewScreen(navController: NavController, chatId: Long, messageId: Long) {
+fun PhotoViewScreen(navController: NavController, chatId: Long, messageId: Long, topicId: Int = 0) {
     val app = navController.context.applicationContext as WearAyugramApp
 
     var path by remember { mutableStateOf<String?>(null) }
     var downloadDone by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
-        path = app.messageRepository.downloadPhotoFull(chatId, messageId)
+        path = app.messageRepository.downloadPhotoFull(chatId, messageId, topicId)
         downloadDone = true
     }
 

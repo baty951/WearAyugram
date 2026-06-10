@@ -35,4 +35,13 @@ class ChatListViewModel(app: Application) : AndroidViewModel(app) {
     fun selectFolder(folderId: Int?) {
         viewModelScope.launch { chatRepo.selectFolder(folderId) }
     }
+
+    /**
+     * Resolves where a tap on the chat should go: forum supergroups open the topic
+     * list, everything else opens the message screen. The check is one cached
+     * GetChat+GetSupergroup, so the tap stays responsive.
+     */
+    fun openChat(chatId: Long, onResolved: (isForum: Boolean) -> Unit) {
+        viewModelScope.launch { onResolved(chatRepo.isForum(chatId)) }
+    }
 }

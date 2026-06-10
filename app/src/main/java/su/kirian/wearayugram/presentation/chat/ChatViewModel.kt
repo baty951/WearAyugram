@@ -25,9 +25,12 @@ class ChatViewModel(app: Application, savedState: SavedStateHandle) : AndroidVie
 
     val chatId: Long = checkNotNull(savedState["chatId"])
 
+    // Forum topic id; 0 = a regular chat opened without a topic.
+    val topicId: Int = savedState["topicId"] ?: 0
+
     private val msgRepo = (app as WearAyugramApp).messageRepository
 
-    val messages: StateFlow<List<TgMessage>> = msgRepo.messages(chatId)
+    val messages: StateFlow<List<TgMessage>> = msgRepo.messages(chatId, topicId)
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     val photoAutoload: StateFlow<Boolean> = AyugramSettings.photoAutoload()
@@ -35,7 +38,7 @@ class ChatViewModel(app: Application, savedState: SavedStateHandle) : AndroidVie
 
     init {
         msgRepo.setOpenChat(chatId)
-        viewModelScope.launch { msgRepo.loadHistory(chatId) }
+        viewModelScope.launch { msgRepo.loadHistory(chatId, topicId = topicId) }
     }
 
     override fun onCleared() {
@@ -46,15 +49,15 @@ class ChatViewModel(app: Application, savedState: SavedStateHandle) : AndroidVie
 
     fun loadOlder() {
         val oldest = messages.value.firstOrNull()?.id ?: return
-        viewModelScope.launch { msgRepo.loadHistory(chatId, fromMessageId = oldest) }
+        viewModelScope.launch { msgRepo.loadHistory(chatId, fromMessageId = oldest, topicId = topicId) }
     }
 
     fun sendText(text: String) {
-        viewModelScope.launch { msgRepo.sendText(chatId, text) }
+        viewModelScope.launch { msgRepo.sendText(chatId, text, topicId) }
     }
 
     fun sendVoice(filePath: String, durationSeconds: Int) {
-        viewModelScope.launch { msgRepo.sendVoice(chatId, filePath, durationSeconds) }
+        viewModelScope.launch { msgRepo.sendVoice(chatId, filePath, durationSeconds, topicId) }
     }
 
     fun markRead(messageIds: LongArray) {
@@ -62,7 +65,7 @@ class ChatViewModel(app: Application, savedState: SavedStateHandle) : AndroidVie
     }
 
     fun downloadPhoto(messageId: Long) {
-        viewModelScope.launch { msgRepo.downloadPhoto(chatId, messageId) }
+        viewModelScope.launch { msgRepo.downloadPhoto(chatId, messageId, topicId) }
     }
 
     // ---- Voice playback ----
@@ -90,7 +93,7 @@ class ChatViewModel(app: Application, savedState: SavedStateHandle) : AndroidVie
             stopVoicePlayback()
             val path = voice.localPath ?: run {
                 _loadingVoiceId.value = message.id
-                val p = msgRepo.downloadVoice(chatId, message.id)
+                val p = msgRepo.downloadVoice(chatId, message.id, topicId)
                 _loadingVoiceId.value = null
                 p
             } ?: return@launch

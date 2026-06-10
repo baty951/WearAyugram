@@ -26,6 +26,7 @@ import su.kirian.wearayugram.presentation.chat.PhotoViewScreen
 import su.kirian.wearayugram.presentation.chatlist.ChatListScreen
 import su.kirian.wearayugram.presentation.proxy.ProxySettingsScreen
 import su.kirian.wearayugram.presentation.settings.SettingsScreen
+import su.kirian.wearayugram.presentation.topics.TopicListScreen
 import su.kirian.wearayugram.presentation.theme.WearAyugramTheme
 
 class MainActivity : ComponentActivity() {
@@ -85,10 +86,20 @@ fun WearApp() {
                 val chatId = backStack.arguments?.getString("chatId")?.toLongOrNull() ?: return@composable
                 ChatScreen(navController, chatId)
             }
+            composable(Routes.TOPICS) { backStack ->
+                val chatId = backStack.arguments?.getString("chatId")?.toLongOrNull() ?: return@composable
+                TopicListScreen(navController, chatId)
+            }
+            composable(Routes.CHAT_TOPIC) { backStack ->
+                val chatId = backStack.arguments?.getString("chatId")?.toLongOrNull() ?: return@composable
+                val topicId = backStack.arguments?.getString("topicId")?.toIntOrNull() ?: return@composable
+                ChatScreen(navController, chatId, topicId)
+            }
             composable(Routes.PHOTO_VIEW) { backStack ->
                 val chatId = backStack.arguments?.getString("chatId")?.toLongOrNull() ?: return@composable
                 val messageId = backStack.arguments?.getString("messageId")?.toLongOrNull() ?: return@composable
-                PhotoViewScreen(navController, chatId, messageId)
+                val topicId = backStack.arguments?.getString("topicId")?.toIntOrNull() ?: 0
+                PhotoViewScreen(navController, chatId, messageId, topicId)
             }
             composable(Routes.SETTINGS) {
                 SettingsScreen()

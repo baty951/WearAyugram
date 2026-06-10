@@ -3,6 +3,7 @@ package su.kirian.wearayugram.domain.repository
 import kotlinx.coroutines.flow.Flow
 import su.kirian.wearayugram.domain.model.TgChat
 import su.kirian.wearayugram.domain.model.TgChatFolder
+import su.kirian.wearayugram.domain.model.TgTopic
 
 interface ChatRepository {
     val chatList: Flow<List<TgChat>>
@@ -14,4 +15,8 @@ interface ChatRepository {
     /** Switches the chat list to the given folder (null = main) and reloads it. */
     suspend fun selectFolder(folderId: Int?)
     suspend fun getChatById(chatId: Long): TgChat?
+    /** True if the chat is a forum supergroup (topics enabled). */
+    suspend fun isForum(chatId: Long): Boolean
+    /** Topics of a forum chat, in TDLib's display order. */
+    suspend fun getTopics(chatId: Long): List<TgTopic>
 }

@@ -101,7 +101,16 @@ fun ChatListScreen(navController: NavController) {
                 }
             } else {
                 items(chats, key = { it.id }) { chat ->
-                    ChatItem(chat = chat, onClick = { navController.navigate(Routes.chat(chat.id)) })
+                    ChatItem(
+                        chat = chat,
+                        onClick = {
+                            viewModel.openChat(chat.id) { isForum ->
+                                navController.navigate(
+                                    if (isForum) Routes.topics(chat.id) else Routes.chat(chat.id)
+                                )
+                            }
+                        }
+                    )
                 }
             }
         }

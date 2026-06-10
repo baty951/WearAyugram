@@ -19,6 +19,7 @@ import su.kirian.wearayugram.data.tdlib.TelegramClient
 import su.kirian.wearayugram.data.tdlib.toDomain
 import su.kirian.wearayugram.domain.model.TgChat
 import su.kirian.wearayugram.domain.model.TgChatFolder
+import su.kirian.wearayugram.domain.model.TgTopic
 import su.kirian.wearayugram.domain.repository.ChatRepository
 
 class ChatRepositoryImpl(private val client: TelegramClient) : ChatRepository {
@@ -153,4 +154,25 @@ class ChatRepositoryImpl(private val client: TelegramClient) : ChatRepository {
 
     override suspend fun getChatById(chatId: Long): TgChat? =
         runCatching { client.send(TdApi.GetChat(chatId)).toDomain() }.getOrNull()
+
+    // Forum-ness can't change without recreating the supergroup, so cache forever.
+    private val forumCache = java.util.concurrent.ConcurrentHashMap<Long, Boolean>()
+
+    override suspend fun isForum(chatId: Long): Boolean {
+        forumCache[chatId]?.let { return it }
+        val result = runCatching {
+            val type = client.send(TdApi.GetChat(chatId)).type
+            if (type is TdApi.ChatTypeSupergroup && !type.isChannel)
+                client.send(TdApi.GetSupergroup(type.supergroupId)).isForum
+            else false
+        }.getOrDefault(false)
+        forumCache[chatId] = result
+        return result
+    }
+
+    override suspend fun getTopics(chatId: Long): List<TgTopic> =
+        runCatching {
+            client.send(TdApi.GetForumTopics(chatId, "", 0, 0, 0, 100))
+                .topics.map { it.toDomain() }
+        }.getOrDefault(emptyList())
 }
