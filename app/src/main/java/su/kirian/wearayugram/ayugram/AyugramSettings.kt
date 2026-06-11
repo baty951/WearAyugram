@@ -10,6 +10,7 @@ import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.runBlocking
 
 val Context.ayugramDataStore by preferencesDataStore(name = "ayugram_settings")
 
@@ -20,6 +21,11 @@ object AyugramSettings {
     val KEY_LOCAL_PREMIUM = booleanPreferencesKey("local_premium")
 
     val KEY_PHOTO_AUTOLOAD = booleanPreferencesKey("photo_autoload")
+
+    // Multi-account: slot index selects the TDLib database directory.
+    const val MAX_ACCOUNTS = 3
+    val KEY_ACTIVE_ACCOUNT = intPreferencesKey("active_account")
+    private val accountNameKeys = List(MAX_ACCOUNTS) { stringPreferencesKey("account_name_$it") }
 
     val KEY_PROXY_ENABLED = booleanPreferencesKey("proxy_enabled")
     val KEY_PROXY_HOST    = stringPreferencesKey("proxy_host")
@@ -48,6 +54,24 @@ object AyugramSettings {
     fun deleteNotify(): Flow<Boolean> = context.ayugramDataStore.data.map { it[KEY_DELETE_NOTIFY] ?: true }
     fun localPremium(): Flow<Boolean> = context.ayugramDataStore.data.map { it[KEY_LOCAL_PREMIUM] ?: false }
     fun photoAutoload(): Flow<Boolean> = context.ayugramDataStore.data.map { it[KEY_PHOTO_AUTOLOAD] ?: photoAutoloadDefault }
+
+    fun activeAccount(): Flow<Int> = context.ayugramDataStore.data.map { it[KEY_ACTIVE_ACCOUNT] ?: 0 }
+    fun accountNames(): Flow<List<String?>> =
+        context.ayugramDataStore.data.map { prefs -> accountNameKeys.map { prefs[it] } }
+
+    // Called once from Application.onCreate before the TDLib directory is chosen —
+    // the only place where a blocking DataStore read is acceptable.
+    fun activeAccountBlocking(): Int =
+        runBlocking { context.ayugramDataStore.data.first()[KEY_ACTIVE_ACCOUNT] ?: 0 }
+
+    suspend fun setActiveAccount(slot: Int) =
+        context.ayugramDataStore.edit { it[KEY_ACTIVE_ACCOUNT] = slot.coerceIn(0, MAX_ACCOUNTS - 1) }
+
+    suspend fun setAccountName(slot: Int, name: String) =
+        context.ayugramDataStore.edit { it[accountNameKeys[slot]] = name }
+
+    suspend fun clearAccountName(slot: Int) =
+        context.ayugramDataStore.edit { it.remove(accountNameKeys[slot]) }
 
     fun proxyEnabled(): Flow<Boolean> = context.ayugramDataStore.data.map { it[KEY_PROXY_ENABLED] ?: false }
     fun proxyHost(): Flow<String>     = context.ayugramDataStore.data.map { it[KEY_PROXY_HOST] ?: "" }

@@ -41,17 +41,29 @@ class WearAyugramApp : Application() {
     lateinit var database: AppDatabase
         private set
 
+    // Active account slot for this process lifetime; switching restarts the process.
+    var activeAccount: Int = 0
+        private set
+
     override fun onCreate() {
         super.onCreate()
         instance = this
 
+        // The :restart helper process must not spin up TDLib/services.
+        if (getProcessName() != packageName) return
+
         AyugramSettings.init(this)
+        activeAccount = AyugramSettings.activeAccountBlocking()
 
         database = Room.databaseBuilder(this, AppDatabase::class.java, "wearayugram.db")
             .addMigrations(AppDatabase.MIGRATION_1_2)
             .build()
 
-        val dbDir = getDir(Constants.TDLIB_DB_DIR, MODE_PRIVATE).absolutePath
+        // Slot 0 keeps the historical directory name so existing logins survive.
+        val dirName =
+            if (activeAccount == 0) Constants.TDLIB_DB_DIR
+            else "${Constants.TDLIB_DB_DIR}_$activeAccount"
+        val dbDir = getDir(dirName, MODE_PRIVATE).absolutePath
         telegramClient = TelegramClient.init(dbDir)
         // AuthRepositoryImpl must be created immediately after TelegramClient so it
         // catches the very first WaitTdlibParameters event and sends SetTdlibParameters
@@ -63,6 +75,24 @@ class WearAyugramApp : Application() {
         createNotificationChannels()
         startForegroundService(Intent(this, TelegramForegroundService::class.java))
         registerFcmToken()
+        saveAccountLabelWhenReady()
+    }
+
+    // Label for the account switcher in settings: "Имя (телефон)" once authorized.
+    private fun saveAccountLabelWhenReady() {
+        appScope.launch {
+            authRepository.authState.first { it is AuthState.Ready }
+            runCatching {
+                val me = telegramClient.send(TdApi.GetMe())
+                val name = "${me.firstName} ${me.lastName}".trim()
+                val label = when {
+                    name.isNotEmpty() && me.phoneNumber.isNotEmpty() -> "$name (+${me.phoneNumber})"
+                    name.isNotEmpty() -> name
+                    else -> "+${me.phoneNumber}"
+                }
+                AyugramSettings.setAccountName(activeAccount, label)
+            }
+        }
     }
 
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)

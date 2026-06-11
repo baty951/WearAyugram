@@ -40,6 +40,14 @@
             </intent-filter>
         </activity>
 
+        <!-- Account-switch helper: lives in its own process so it survives the
+             main process's exit and can relaunch MainActivity afterwards. -->
+        <activity
+            android:name=".presentation.RestartActivity"
+            android:exported="false"
+            android:process=":restart"
+            android:theme="@android:style/Theme.NoDisplay" />
+
         <service
             android:name=".data.service.TelegramForegroundService"
             android:exported="false"
