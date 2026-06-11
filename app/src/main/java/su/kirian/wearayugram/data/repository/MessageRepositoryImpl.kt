@@ -74,6 +74,22 @@ class MessageRepositoryImpl(
     // UpdateChatReadOutbox.
     private val readOutbox = java.util.concurrent.ConcurrentHashMap<Long, Long>()
 
+    // chatId -> muted: mute is account-wide (synced from other devices via
+    // notificationSettings), so muted chats must not fire watch notifications.
+    // Seeded lazily from GetChat, kept live by UpdateChatNotificationSettings.
+    private val mutedChats = java.util.concurrent.ConcurrentHashMap<Long, Boolean>()
+
+    private fun isMutedSettings(s: TdApi.ChatNotificationSettings): Boolean =
+        // useDefaultMuteFor=true means "follow the scope default", which is unmuted
+        // unless the user muted a whole chat category — not the per-chat mute we
+        // are asked to respect here.
+        !s.useDefaultMuteFor && s.muteFor > 0
+
+    private suspend fun isChatMuted(chatId: Long): Boolean =
+        mutedChats[chatId] ?: runCatching {
+            isMutedSettings(client.send(TdApi.GetChat(chatId)).notificationSettings)
+        }.getOrDefault(false).also { mutedChats[chatId] = it }
+
     override fun setOpenChat(chatId: Long) { openChatId = chatId }
 
     override fun editHistory(messageId: Long): Flow<List<TgMessageEdit>> =
@@ -82,6 +98,10 @@ class MessageRepositoryImpl(
         }
 
     init {
+        client.updatesOf<TdApi.UpdateChatNotificationSettings>()
+            .onEach { mutedChats[it.chatId] = isMutedSettings(it.notificationSettings) }
+            .launchIn(scope)
+
         client.updatesOf<TdApi.UpdateChatReadOutbox>()
             .onEach { update ->
                 readOutbox[update.chatId] = update.lastReadOutboxMessageId
@@ -104,8 +124,9 @@ class MessageRepositoryImpl(
                 val domainMsg = update.message.toDomain(name, readOutbox[chatId] ?: 0)
                 val flow = flowOf(chatId, topicOf(update.message))
                 flow.update { it + domainMsg }
-                // Notify for incoming messages not in the currently open chat
-                if (!update.message.isOutgoing && chatId != openChatId) {
+                // Notify for incoming messages not in the currently open chat;
+                // chats muted anywhere on the account stay silent on the watch too.
+                if (!update.message.isOutgoing && chatId != openChatId && !isChatMuted(chatId)) {
                     val text = when (val c = domainMsg.content) {
                         is MessageContent.Text -> c.text
                         is MessageContent.Voice -> "🎤 Голосовое"
@@ -195,7 +216,9 @@ class MessageRepositoryImpl(
                                     )
                                 }
                                 // Send delete notification if incoming and not in open chat
-                                if (deleteNotify && !msg.isOutgoing && msg.chatId != openChatId) {
+                                if (deleteNotify && !msg.isOutgoing && msg.chatId != openChatId &&
+                                    mutedChats[msg.chatId] != true
+                                ) {
                                     val originalText2 = when (val c = msg.content) {
                                         is MessageContent.Text -> c.text
                                         else -> "[медиа]"
