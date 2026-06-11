@@ -22,5 +22,7 @@ interface MessageRepository {
     suspend fun downloadVideo(chatId: Long, messageId: Long, topicId: Int = 0): String?
     /** Downloads the displayable sticker image (WEBP or animated-sticker thumbnail). */
     suspend fun downloadSticker(chatId: Long, messageId: Long, topicId: Int = 0): String?
+    /** Downloads a document file and returns the local path. */
+    suspend fun downloadDocument(chatId: Long, messageId: Long, topicId: Int = 0): String?
     fun setOpenChat(chatId: Long)
 }

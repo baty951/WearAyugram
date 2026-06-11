@@ -73,6 +73,12 @@ sealed class MessageContent {
         val height: Int,
         val localPath: String?,
     ) : MessageContent()
-    data class Document(val fileName: String, val mimeType: String) : MessageContent()
+    data class Document(
+        val fileName: String,
+        val mimeType: String,
+        val sizeBytes: Long,
+        val fileId: Int,
+        val localPath: String?,
+    ) : MessageContent()
     data object Unsupported : MessageContent()
 }

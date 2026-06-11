@@ -248,6 +248,21 @@ fun ChatScreen(navController: NavController, chatId: Long, topicId: Int = 0) {
                         onThumbNeeded = { viewModel.downloadVideoThumb(message.id) },
                         onOpen = { navController.navigate(Routes.videoPlay(chatId, message.id, topicId)) },
                     )
+                } else if (content is MessageContent.Document && !message.deletedLocally) {
+                    DocumentBubble(
+                        message = message,
+                        doc = content,
+                        // Only files the watch can actually open are downloadable:
+                        // images and videos go to the built-in viewers. Everything
+                        // else is shown as info only — no tap action.
+                        onOpen = when {
+                            content.mimeType.startsWith("image/") ->
+                                ({ navController.navigate(Routes.photoView(chatId, message.id, topicId)) })
+                            content.mimeType.startsWith("video/") ->
+                                ({ navController.navigate(Routes.videoPlay(chatId, message.id, topicId)) })
+                            else -> null
+                        },
+                    )
                 } else if (content is MessageContent.Sticker && !message.deletedLocally && content.fileId != 0) {
                     StickerBubble(
                         message = message,
@@ -412,6 +427,69 @@ private fun VoiceBubble(
             .clickable(onClick = onTap)
             .padding(horizontal = 12.dp, vertical = 7.dp)
     )
+}
+
+@Composable
+private fun DocumentBubble(
+    message: TgMessage,
+    doc: MessageContent.Document,
+    onOpen: (() -> Unit)?,
+) {
+    val isOut = message.isOutgoing
+    val cs = MaterialTheme.colorScheme
+    val textColor = if (isOut) cs.onPrimaryContainer else cs.onSurface
+
+    val annotated = remember(message, onOpen == null) {
+        val status = if (onOpen != null) "открыть" else "нельзя открыть на часах"
+        buildAnnotatedString {
+            if (!isOut && message.senderName.isNotEmpty()) {
+                withStyle(SpanStyle(color = cs.tertiary, fontWeight = FontWeight.SemiBold, fontSize = 11.sp)) {
+                    append(message.senderName)
+                }
+                append("\n")
+            }
+            withStyle(SpanStyle(color = textColor, fontSize = 14.sp)) {
+                append("📎 ${doc.fileName.ifEmpty { "Файл" }}")
+            }
+            withStyle(SpanStyle(color = textColor.copy(alpha = 0.7f), fontSize = 11.sp)) {
+                append("\n${formatFileSize(doc.sizeBytes)} · $status")
+            }
+            withStyle(SpanStyle(color = textColor.copy(alpha = 0.55f), fontSize = 9.sp)) {
+                append("   " + formatMsgTime(message.date) + readMark(message))
+            }
+        }
+    }
+
+    Text(
+        text = annotated,
+        textAlign = if (isOut) TextAlign.End else TextAlign.Start,
+        lineHeight = 17.sp,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(
+                start = if (isOut) 32.dp else 8.dp,
+                end = if (isOut) 8.dp else 32.dp,
+                top = 3.dp,
+                bottom = 3.dp
+            )
+            .clip(
+                RoundedCornerShape(
+                    topStart = 16.dp,
+                    topEnd = 16.dp,
+                    bottomStart = if (isOut) 16.dp else 4.dp,
+                    bottomEnd = if (isOut) 4.dp else 16.dp
+                )
+            )
+            .background(if (isOut) cs.primaryContainer else cs.surfaceContainerHigh)
+            .let { if (onOpen != null) it.clickable(onClick = onOpen) else it }
+            .padding(horizontal = 12.dp, vertical = 7.dp)
+    )
+}
+
+private fun formatFileSize(bytes: Long): String = when {
+    bytes >= 1_048_576 -> "%.1f МБ".format(bytes / 1_048_576.0)
+    bytes >= 1024 -> "%d КБ".format(bytes / 1024)
+    else -> "$bytes Б"
 }
 
 @Composable

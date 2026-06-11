@@ -145,7 +145,11 @@ private fun TdApi.MessageContent.toDomainContent(): MessageContent = when (this)
     }
     is TdApi.MessageDocument -> MessageContent.Document(
         fileName = document.fileName,
-        mimeType = document.mimeType
+        mimeType = document.mimeType,
+        sizeBytes = document.document.size.takeIf { it > 0 } ?: document.document.expectedSize,
+        fileId = document.document.id,
+        localPath = document.document.local.path
+            .takeIf { document.document.local.isDownloadingCompleted }
     )
     else -> MessageContent.Unsupported
 }

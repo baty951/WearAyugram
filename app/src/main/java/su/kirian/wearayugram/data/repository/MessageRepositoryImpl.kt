@@ -313,6 +313,10 @@ class MessageRepositoryImpl(
 
     override suspend fun downloadVideo(chatId: Long, messageId: Long, topicId: Int): String? {
         val content = flowOf(chatId, topicId).value.firstOrNull { it.id == messageId }?.content
+        // Video sent as a file plays in the same player.
+        if (content is MessageContent.Document && content.mimeType.startsWith("video/")) {
+            return downloadDocument(chatId, messageId, topicId)
+        }
         val fileId = when (content) {
             is MessageContent.Video -> content.localPath?.let { return it } ?: content.fileId
             is MessageContent.VideoNote -> content.localPath?.let { return it } ?: content.fileId
@@ -325,6 +329,19 @@ class MessageRepositoryImpl(
                 is MessageContent.VideoNote -> c.copy(localPath = path)
                 else -> c
             }
+        }
+        return path
+    }
+
+    override suspend fun downloadDocument(chatId: Long, messageId: Long, topicId: Int): String? {
+        val doc = flowOf(chatId, topicId).value.firstOrNull { it.id == messageId }
+            ?.content as? MessageContent.Document ?: return null
+        doc.localPath?.let { return it }
+
+        // Documents can be arbitrarily large — use the long (video) timeout.
+        val path = fileDownloader.download(doc.fileId, FileDownloader.VIDEO_TIMEOUT_MS) ?: return null
+        updateContent(chatId, topicId, messageId) { c ->
+            if (c is MessageContent.Document) c.copy(localPath = path) else c
         }
         return path
     }
@@ -359,8 +376,12 @@ class MessageRepositoryImpl(
     }
 
     override suspend fun downloadPhotoFull(chatId: Long, messageId: Long, topicId: Int): String? {
-        val photo = flowOf(chatId, topicId).value.firstOrNull { it.id == messageId }
-            ?.content as? MessageContent.Photo ?: return null
+        val content = flowOf(chatId, topicId).value.firstOrNull { it.id == messageId }?.content
+        // Image sent as a file: the viewer opens the document itself.
+        if (content is MessageContent.Document && content.mimeType.startsWith("image/")) {
+            return downloadDocument(chatId, messageId, topicId)
+        }
+        val photo = content as? MessageContent.Photo ?: return null
         val fileId =
             if (AyugramSettings.isLowRamDevice || photo.fullFileId == 0) photo.fileId
             else photo.fullFileId
