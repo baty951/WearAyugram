@@ -128,11 +128,21 @@ private fun TdApi.MessageContent.toDomainContent(): MessageContent = when (this)
         localPath = videoNote.video.local.path
             .takeIf { videoNote.video.local.isDownloadingCompleted }
     )
-    is TdApi.MessageSticker -> MessageContent.Sticker(
-        emoji = sticker.emoji,
-        localPath = sticker.sticker.local.path
-            .takeIf { sticker.sticker.local.isDownloadingCompleted }
-    )
+    is TdApi.MessageSticker -> {
+        // Static WEBP renders directly; animated TGS/WEBM would need a Lottie/video
+        // pipeline, so they show their static thumbnail instead.
+        val displayFile =
+            if (sticker.format is TdApi.StickerFormatWebp) sticker.sticker
+            else sticker.thumbnail?.file
+        MessageContent.Sticker(
+            emoji = sticker.emoji,
+            fileId = displayFile?.id ?: 0,
+            width = sticker.width,
+            height = sticker.height,
+            localPath = displayFile?.local?.path
+                ?.takeIf { displayFile.local.isDownloadingCompleted }
+        )
+    }
     is TdApi.MessageDocument -> MessageContent.Document(
         fileName = document.fileName,
         mimeType = document.mimeType

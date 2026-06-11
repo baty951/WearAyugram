@@ -21,8 +21,10 @@ object PhotoDecoder {
         override fun sizeOf(key: String, value: Bitmap) = value.byteCount / 1024
     }
 
-    suspend fun decode(path: String, targetWidth: Int): Bitmap? {
-        val key = "$path@$targetWidth"
+    // keepAlpha: stickers need transparency, so they decode as ARGB_8888 — they are
+    // small (<=512px), the doubled per-pixel cost is fine. Photos stay on RGB_565.
+    suspend fun decode(path: String, targetWidth: Int, keepAlpha: Boolean = false): Bitmap? {
+        val key = "$path@$targetWidth@$keepAlpha"
         cache.get(key)?.let { return it }
         return withContext(Dispatchers.IO) {
             runCatching {
@@ -32,7 +34,8 @@ object PhotoDecoder {
                 while (bounds.outWidth / (sample * 2) >= targetWidth) sample *= 2
                 val opts = BitmapFactory.Options().apply {
                     inSampleSize = sample
-                    inPreferredConfig = Bitmap.Config.RGB_565
+                    inPreferredConfig =
+                        if (keepAlpha) Bitmap.Config.ARGB_8888 else Bitmap.Config.RGB_565
                 }
                 BitmapFactory.decodeFile(path, opts)
             }.getOrNull()?.also { cache.put(key, it) }

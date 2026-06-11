@@ -64,7 +64,15 @@ sealed class MessageContent {
         val localPath: String?,
     ) : MessageContent()
 
-    data class Sticker(val emoji: String, val localPath: String?) : MessageContent()
+    // fileId points at the displayable file: the WEBP sticker itself for static
+    // stickers, or the static thumbnail for animated (TGS/WEBM) ones.
+    data class Sticker(
+        val emoji: String,
+        val fileId: Int,
+        val width: Int,
+        val height: Int,
+        val localPath: String?,
+    ) : MessageContent()
     data class Document(val fileName: String, val mimeType: String) : MessageContent()
     data object Unsupported : MessageContent()
 }

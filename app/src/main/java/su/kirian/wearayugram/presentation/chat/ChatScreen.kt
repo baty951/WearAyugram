@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
@@ -247,6 +248,12 @@ fun ChatScreen(navController: NavController, chatId: Long, topicId: Int = 0) {
                         onThumbNeeded = { viewModel.downloadVideoThumb(message.id) },
                         onOpen = { navController.navigate(Routes.videoPlay(chatId, message.id, topicId)) },
                     )
+                } else if (content is MessageContent.Sticker && !message.deletedLocally && content.fileId != 0) {
+                    StickerBubble(
+                        message = message,
+                        sticker = content,
+                        onDownload = { viewModel.downloadSticker(message.id) },
+                    )
                 } else if (content is MessageContent.Photo && !message.deletedLocally) {
                     PhotoBubble(
                         message = message,
@@ -405,6 +412,61 @@ private fun VoiceBubble(
             .clickable(onClick = onTap)
             .padding(horizontal = 12.dp, vertical = 7.dp)
     )
+}
+
+@Composable
+private fun StickerBubble(
+    message: TgMessage,
+    sticker: MessageContent.Sticker,
+    onDownload: () -> Unit,
+) {
+    val isOut = message.isOutgoing
+    val cs = MaterialTheme.colorScheme
+
+    // Sticker images are tiny (WEBP <= 512px or a thumbnail) — always fetch.
+    LaunchedEffect(sticker.localPath) {
+        if (sticker.localPath == null) onDownload()
+    }
+
+    val targetWidthPx = with(LocalDensity.current) { 120.dp.roundToPx() }
+    val bitmap by produceState<Bitmap?>(initialValue = null, sticker.localPath) {
+        value = sticker.localPath?.let { PhotoDecoder.decode(it, targetWidthPx, keepAlpha = true) }
+    }
+    val aspect = if (sticker.width > 0 && sticker.height > 0)
+        sticker.width.toFloat() / sticker.height else 1f
+
+    // Stickers render without a bubble background, like in every Telegram client.
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(
+                start = if (isOut) 32.dp else 8.dp,
+                end = if (isOut) 8.dp else 32.dp,
+                top = 3.dp,
+                bottom = 3.dp
+            ),
+        horizontalAlignment = if (isOut) Alignment.End else Alignment.Start,
+    ) {
+        val bmp = bitmap
+        if (bmp != null) {
+            Image(
+                bitmap = bmp.asImageBitmap(),
+                contentDescription = sticker.emoji,
+                modifier = Modifier
+                    .width(120.dp)
+                    .aspectRatio(aspect.coerceIn(0.5f, 2f)),
+                contentScale = ContentScale.Fit,
+            )
+        } else {
+            // Emoji stand-in while the image downloads/decodes.
+            Text(text = sticker.emoji, fontSize = 48.sp)
+        }
+        Text(
+            text = formatMsgTime(message.date) + readMark(message),
+            fontSize = 9.sp,
+            color = cs.onSurface.copy(alpha = 0.55f),
+        )
+    }
 }
 
 @Composable

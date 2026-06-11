@@ -329,6 +329,18 @@ class MessageRepositoryImpl(
         return path
     }
 
+    override suspend fun downloadSticker(chatId: Long, messageId: Long, topicId: Int): String? {
+        val sticker = flowOf(chatId, topicId).value.firstOrNull { it.id == messageId }
+            ?.content as? MessageContent.Sticker ?: return null
+        sticker.localPath?.let { return it }
+
+        val path = fileDownloader.download(sticker.fileId) ?: return null
+        updateContent(chatId, topicId, messageId) { c ->
+            if (c is MessageContent.Sticker) c.copy(localPath = path) else c
+        }
+        return path
+    }
+
     override suspend fun downloadVoice(chatId: Long, messageId: Long, topicId: Int): String? {
         val flow = flowOf(chatId, topicId)
         val voice = flow.value.firstOrNull { it.id == messageId }

@@ -72,6 +72,10 @@ class ChatViewModel(app: Application, savedState: SavedStateHandle) : AndroidVie
         viewModelScope.launch { msgRepo.downloadVideoThumb(chatId, messageId, topicId) }
     }
 
+    fun downloadSticker(messageId: Long) {
+        viewModelScope.launch { msgRepo.downloadSticker(chatId, messageId, topicId) }
+    }
+
     // ---- Voice playback ----
 
     private var mediaPlayer: MediaPlayer? = null
