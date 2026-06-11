@@ -16,5 +16,9 @@ interface MessageRepository {
     suspend fun downloadPhotoFull(chatId: Long, messageId: Long, topicId: Int = 0): String?
     /** Downloads the voice note file of the message and returns the local path. */
     suspend fun downloadVoice(chatId: Long, messageId: Long, topicId: Int = 0): String?
+    /** Downloads the small thumbnail of a video / video note for the bubble preview. */
+    suspend fun downloadVideoThumb(chatId: Long, messageId: Long, topicId: Int = 0): String?
+    /** Downloads the full video / video note file and returns the local path. */
+    suspend fun downloadVideo(chatId: Long, messageId: Long, topicId: Int = 0): String?
     fun setOpenChat(chatId: Long)
 }

@@ -68,6 +68,10 @@ class ChatViewModel(app: Application, savedState: SavedStateHandle) : AndroidVie
         viewModelScope.launch { msgRepo.downloadPhoto(chatId, messageId, topicId) }
     }
 
+    fun downloadVideoThumb(messageId: Long) {
+        viewModelScope.launch { msgRepo.downloadVideoThumb(chatId, messageId, topicId) }
+    }
+
     // ---- Voice playback ----
 
     private var mediaPlayer: MediaPlayer? = null

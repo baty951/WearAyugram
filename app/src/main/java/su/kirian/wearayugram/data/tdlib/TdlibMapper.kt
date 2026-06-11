@@ -68,6 +68,7 @@ fun TdApi.MessageContent.toPreviewText(): String = when (this) {
     is TdApi.MessageText -> text.text.take(80)
     is TdApi.MessagePhoto -> "📷 Фото"
     is TdApi.MessageVideo -> "📹 Видео"
+    is TdApi.MessageVideoNote -> "⭕ Кружок"
     is TdApi.MessageVoiceNote -> "🎤 Голосовое"
     is TdApi.MessageAudio -> "🎵 Аудио"
     is TdApi.MessageDocument -> "📎 ${document.fileName}"
@@ -104,6 +105,29 @@ private fun TdApi.MessageContent.toDomainContent(): MessageContent = when (this)
                 ?.takeIf { chatSize.photo.local.isDownloadingCompleted }
         )
     }
+    is TdApi.MessageVideo -> MessageContent.Video(
+        caption = caption?.text ?: "",
+        durationSeconds = video.duration,
+        fileId = video.video.id,
+        thumbFileId = video.thumbnail?.file?.id ?: 0,
+        width = video.width,
+        height = video.height,
+        miniThumb = video.minithumbnail?.data,
+        thumbPath = video.thumbnail?.file?.local?.path
+            ?.takeIf { video.thumbnail?.file?.local?.isDownloadingCompleted == true },
+        localPath = video.video.local.path
+            .takeIf { video.video.local.isDownloadingCompleted }
+    )
+    is TdApi.MessageVideoNote -> MessageContent.VideoNote(
+        durationSeconds = videoNote.duration,
+        fileId = videoNote.video.id,
+        thumbFileId = videoNote.thumbnail?.file?.id ?: 0,
+        miniThumb = videoNote.minithumbnail?.data,
+        thumbPath = videoNote.thumbnail?.file?.local?.path
+            ?.takeIf { videoNote.thumbnail?.file?.local?.isDownloadingCompleted == true },
+        localPath = videoNote.video.local.path
+            .takeIf { videoNote.video.local.isDownloadingCompleted }
+    )
     is TdApi.MessageSticker -> MessageContent.Sticker(
         emoji = sticker.emoji,
         localPath = sticker.sticker.local.path

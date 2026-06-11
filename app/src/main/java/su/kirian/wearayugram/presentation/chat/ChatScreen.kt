@@ -222,6 +222,31 @@ fun ChatScreen(navController: NavController, chatId: Long, topicId: Int = 0) {
                         positionSec = if (playingVoiceId == message.id) voicePositionSec else 0,
                         onTap = { viewModel.toggleVoice(message) },
                     )
+                } else if (content is MessageContent.Video && !message.deletedLocally) {
+                    VideoBubble(
+                        message = message,
+                        durationSeconds = content.durationSeconds,
+                        caption = content.caption,
+                        aspect = if (content.width > 0 && content.height > 0)
+                            content.width.toFloat() / content.height else 1.5f,
+                        miniThumb = content.miniThumb,
+                        thumbPath = content.thumbPath,
+                        circular = false,
+                        onThumbNeeded = { viewModel.downloadVideoThumb(message.id) },
+                        onOpen = { navController.navigate(Routes.videoPlay(chatId, message.id, topicId)) },
+                    )
+                } else if (content is MessageContent.VideoNote && !message.deletedLocally) {
+                    VideoBubble(
+                        message = message,
+                        durationSeconds = content.durationSeconds,
+                        caption = "",
+                        aspect = 1f,
+                        miniThumb = content.miniThumb,
+                        thumbPath = content.thumbPath,
+                        circular = true,
+                        onThumbNeeded = { viewModel.downloadVideoThumb(message.id) },
+                        onOpen = { navController.navigate(Routes.videoPlay(chatId, message.id, topicId)) },
+                    )
                 } else if (content is MessageContent.Photo && !message.deletedLocally) {
                     PhotoBubble(
                         message = message,
@@ -268,6 +293,8 @@ private fun MessageBubble(message: TgMessage) {
             is MessageContent.Text -> c.text
             is MessageContent.Voice -> "🎤 ${c.durationSeconds}″"
             is MessageContent.Photo -> "📷 ${c.caption.ifEmpty { "Фото" }}"
+            is MessageContent.Video -> "📹 ${c.caption.ifEmpty { "Видео" }}"
+            is MessageContent.VideoNote -> "⭕ Кружок"
             is MessageContent.Sticker -> c.emoji
             is MessageContent.Document -> "📎 ${c.fileName}"
             is MessageContent.Unsupported -> "…"
@@ -378,6 +405,102 @@ private fun VoiceBubble(
             .clickable(onClick = onTap)
             .padding(horizontal = 12.dp, vertical = 7.dp)
     )
+}
+
+@Composable
+private fun VideoBubble(
+    message: TgMessage,
+    durationSeconds: Int,
+    caption: String,
+    aspect: Float,
+    miniThumb: ByteArray?,
+    thumbPath: String?,
+    circular: Boolean,
+    onThumbNeeded: () -> Unit,
+    onOpen: () -> Unit,
+) {
+    val isOut = message.isOutgoing
+    val cs = MaterialTheme.colorScheme
+
+    // The sharp thumbnail is a tiny JPEG — always fetch it (unlike the full video,
+    // which only downloads when the player opens). FileDownloader dedups.
+    LaunchedEffect(thumbPath) {
+        if (thumbPath == null) onThumbNeeded()
+    }
+
+    val targetWidthPx = with(LocalDensity.current) { 160.dp.roundToPx() }
+    val thumb by produceState<Bitmap?>(initialValue = null, thumbPath) {
+        value = thumbPath?.let { PhotoDecoder.decode(it, targetWidthPx) }
+    }
+    val mini = remember(message.id) {
+        miniThumb?.let { PhotoDecoder.decodeMiniThumb(it) }
+    }
+
+    val textColor = if (isOut) cs.onPrimaryContainer else cs.onSurface
+    val meta = remember(message, caption) {
+        buildAnnotatedString {
+            if (caption.isNotEmpty()) {
+                withStyle(SpanStyle(color = textColor, fontSize = 13.sp)) { append(caption) }
+            }
+            withStyle(SpanStyle(color = textColor.copy(alpha = 0.55f), fontSize = 9.sp)) {
+                if (caption.isNotEmpty()) append("  ")
+                append(formatMsgTime(message.date) + readMark(message))
+            }
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(
+                start = if (isOut) 32.dp else 8.dp,
+                end = if (isOut) 8.dp else 32.dp,
+                top = 3.dp,
+                bottom = 3.dp
+            )
+            .clip(RoundedCornerShape(16.dp))
+            .background(if (isOut) cs.primaryContainer else cs.surfaceContainerHigh)
+            .clickable(onClick = onOpen)
+    ) {
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .aspectRatio(aspect.coerceIn(0.6f, 2f))
+                // Video notes are round in every Telegram client.
+                .let { if (circular) it.padding(6.dp).clip(androidx.compose.foundation.shape.CircleShape) else it }
+        ) {
+            val shown = thumb ?: mini
+            if (shown != null) {
+                Image(
+                    bitmap = shown.asImageBitmap(),
+                    contentDescription = if (circular) "Кружок" else "Видео",
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                )
+            } else {
+                Box(Modifier.fillMaxSize().background(cs.surfaceContainer))
+            }
+            Text(
+                text = "▶",
+                fontSize = 22.sp,
+                color = Color.White,
+                modifier = Modifier.align(Alignment.Center),
+            )
+            Text(
+                text = formatVoiceDuration(durationSeconds),
+                fontSize = 10.sp,
+                color = Color.White,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 8.dp, bottom = 4.dp),
+            )
+        }
+        Text(
+            text = meta,
+            lineHeight = 16.sp,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+        )
+    }
 }
 
 @Composable

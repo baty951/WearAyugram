@@ -91,6 +91,8 @@ class MessageRepositoryImpl(
                         is MessageContent.Text -> c.text
                         is MessageContent.Voice -> "🎤 Голосовое"
                         is MessageContent.Photo -> "📷 Фото"
+                        is MessageContent.Video -> "📹 Видео"
+                        is MessageContent.VideoNote -> "⭕ Кружок"
                         is MessageContent.Sticker -> c.emoji
                         is MessageContent.Document -> "📎 ${c.fileName}"
                         is MessageContent.Unsupported -> "Сообщение"
@@ -275,6 +277,53 @@ class MessageRepositoryImpl(
                 if (msg.id == messageId && msg.content is MessageContent.Photo)
                     msg.copy(content = msg.content.copy(localPath = path))
                 else msg
+            }
+        }
+        return path
+    }
+
+    private fun updateContent(
+        chatId: Long,
+        topicId: Int,
+        messageId: Long,
+        transform: (MessageContent) -> MessageContent,
+    ) {
+        flowOf(chatId, topicId).update { list ->
+            list.map { if (it.id == messageId) it.copy(content = transform(it.content)) else it }
+        }
+    }
+
+    override suspend fun downloadVideoThumb(chatId: Long, messageId: Long, topicId: Int): String? {
+        val content = flowOf(chatId, topicId).value.firstOrNull { it.id == messageId }?.content
+        val thumbFileId = when (content) {
+            is MessageContent.Video -> content.thumbPath?.let { return it } ?: content.thumbFileId
+            is MessageContent.VideoNote -> content.thumbPath?.let { return it } ?: content.thumbFileId
+            else -> return null
+        }
+        val path = fileDownloader.download(thumbFileId) ?: return null
+        updateContent(chatId, topicId, messageId) { c ->
+            when (c) {
+                is MessageContent.Video -> c.copy(thumbPath = path)
+                is MessageContent.VideoNote -> c.copy(thumbPath = path)
+                else -> c
+            }
+        }
+        return path
+    }
+
+    override suspend fun downloadVideo(chatId: Long, messageId: Long, topicId: Int): String? {
+        val content = flowOf(chatId, topicId).value.firstOrNull { it.id == messageId }?.content
+        val fileId = when (content) {
+            is MessageContent.Video -> content.localPath?.let { return it } ?: content.fileId
+            is MessageContent.VideoNote -> content.localPath?.let { return it } ?: content.fileId
+            else -> return null
+        }
+        val path = fileDownloader.download(fileId, FileDownloader.VIDEO_TIMEOUT_MS) ?: return null
+        updateContent(chatId, topicId, messageId) { c ->
+            when (c) {
+                is MessageContent.Video -> c.copy(localPath = path)
+                is MessageContent.VideoNote -> c.copy(localPath = path)
+                else -> c
             }
         }
         return path

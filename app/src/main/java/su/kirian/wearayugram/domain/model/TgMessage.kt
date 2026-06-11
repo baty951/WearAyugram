@@ -39,6 +39,31 @@ sealed class MessageContent {
         val miniThumb: ByteArray?,
         val localPath: String?,
     ) : MessageContent()
+    // thumbPath — downloaded video thumbnail (small JPEG) for a sharp bubble preview;
+    // miniThumb — instant blurry placeholder until it arrives.
+    @Suppress("ArrayInDataClass")
+    data class Video(
+        val caption: String,
+        val durationSeconds: Int,
+        val fileId: Int,
+        val thumbFileId: Int,
+        val width: Int,
+        val height: Int,
+        val miniThumb: ByteArray?,
+        val thumbPath: String?,
+        val localPath: String?,
+    ) : MessageContent()
+
+    @Suppress("ArrayInDataClass")
+    data class VideoNote(
+        val durationSeconds: Int,
+        val fileId: Int,
+        val thumbFileId: Int,
+        val miniThumb: ByteArray?,
+        val thumbPath: String?,
+        val localPath: String?,
+    ) : MessageContent()
+
     data class Sticker(val emoji: String, val localPath: String?) : MessageContent()
     data class Document(val fileName: String, val mimeType: String) : MessageContent()
     data object Unsupported : MessageContent()

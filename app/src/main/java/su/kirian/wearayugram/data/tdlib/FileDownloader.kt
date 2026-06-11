@@ -29,12 +29,12 @@ class FileDownloader(private val client: TelegramClient) {
     // same file: callers for an in-flight fileId await the existing Deferred.
     private val inFlight = ConcurrentHashMap<Int, Deferred<String?>>()
 
-    suspend fun download(fileId: Int): String? {
+    suspend fun download(fileId: Int, timeoutMs: Long = DOWNLOAD_TIMEOUT_MS): String? {
         if (fileId == 0) return null
         val deferred = inFlight.computeIfAbsent(fileId) {
             scope.async {
                 semaphore.withPermit {
-                    withTimeoutOrNull(DOWNLOAD_TIMEOUT_MS) {
+                    withTimeoutOrNull(timeoutMs) {
                         runCatching {
                             val file = client.send(TdApi.DownloadFile(fileId, PRIORITY, 0, 0, true))
                             file.local?.path
@@ -50,9 +50,11 @@ class FileDownloader(private val client: TelegramClient) {
         return path
     }
 
-    private companion object {
+    companion object {
         // 1..32, higher = sooner. Chat photos should win over background fetches.
-        const val PRIORITY = 16
+        private const val PRIORITY = 16
         const val DOWNLOAD_TIMEOUT_MS = 60_000L
+        // Videos are much larger than photos/voice — give them several minutes.
+        const val VIDEO_TIMEOUT_MS = 300_000L
     }
 }
