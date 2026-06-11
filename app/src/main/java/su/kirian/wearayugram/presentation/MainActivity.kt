@@ -107,7 +107,8 @@ fun WearApp() {
                 val chatId = backStack.arguments?.getString("chatId")?.toLongOrNull() ?: return@composable
                 val messageId = backStack.arguments?.getString("messageId")?.toLongOrNull() ?: return@composable
                 val topicId = backStack.arguments?.getString("topicId")?.toIntOrNull() ?: 0
-                VideoPlayerScreen(navController, chatId, messageId, topicId)
+                val loop = backStack.arguments?.getString("loop") == "1"
+                VideoPlayerScreen(navController, chatId, messageId, topicId, loop)
             }
             composable(Routes.SEARCH) {
                 SearchScreen(navController)

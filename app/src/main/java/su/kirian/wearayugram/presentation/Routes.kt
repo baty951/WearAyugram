@@ -9,7 +9,7 @@ object Routes {
     const val TOPICS = "topics/{chatId}"
     const val CHAT_TOPIC = "chat/{chatId}/topic/{topicId}"
     const val PHOTO_VIEW = "photo/{chatId}/{messageId}/{topicId}"
-    const val VIDEO_PLAY = "video/{chatId}/{messageId}/{topicId}"
+    const val VIDEO_PLAY = "video/{chatId}/{messageId}/{topicId}/{loop}"
     const val SEARCH = "search"
     const val SETTINGS      = "settings"
     const val PROXY_SETTINGS = "proxy_settings"
@@ -18,5 +18,6 @@ object Routes {
     fun topics(chatId: Long) = "topics/$chatId"
     fun chatTopic(chatId: Long, topicId: Int) = "chat/$chatId/topic/$topicId"
     fun photoView(chatId: Long, messageId: Long, topicId: Int) = "photo/$chatId/$messageId/$topicId"
-    fun videoPlay(chatId: Long, messageId: Long, topicId: Int) = "video/$chatId/$messageId/$topicId"
+    fun videoPlay(chatId: Long, messageId: Long, topicId: Int, loop: Boolean = false) =
+        "video/$chatId/$messageId/$topicId/${if (loop) 1 else 0}"
 }

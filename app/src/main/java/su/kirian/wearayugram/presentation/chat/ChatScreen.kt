@@ -226,7 +226,7 @@ fun ChatScreen(navController: NavController, chatId: Long, topicId: Int = 0) {
                 } else if (content is MessageContent.Video && !message.deletedLocally) {
                     VideoBubble(
                         message = message,
-                        durationSeconds = content.durationSeconds,
+                        badge = formatVoiceDuration(content.durationSeconds),
                         caption = content.caption,
                         aspect = if (content.width > 0 && content.height > 0)
                             content.width.toFloat() / content.height else 1.5f,
@@ -239,7 +239,7 @@ fun ChatScreen(navController: NavController, chatId: Long, topicId: Int = 0) {
                 } else if (content is MessageContent.VideoNote && !message.deletedLocally) {
                     VideoBubble(
                         message = message,
-                        durationSeconds = content.durationSeconds,
+                        badge = formatVoiceDuration(content.durationSeconds),
                         caption = "",
                         aspect = 1f,
                         miniThumb = content.miniThumb,
@@ -247,6 +247,20 @@ fun ChatScreen(navController: NavController, chatId: Long, topicId: Int = 0) {
                         circular = true,
                         onThumbNeeded = { viewModel.downloadVideoThumb(message.id) },
                         onOpen = { navController.navigate(Routes.videoPlay(chatId, message.id, topicId)) },
+                    )
+                } else if (content is MessageContent.Animation && !message.deletedLocally) {
+                    VideoBubble(
+                        message = message,
+                        badge = "GIF",
+                        caption = content.caption,
+                        aspect = if (content.width > 0 && content.height > 0)
+                            content.width.toFloat() / content.height else 1.5f,
+                        miniThumb = content.miniThumb,
+                        thumbPath = content.thumbPath,
+                        circular = false,
+                        onThumbNeeded = { viewModel.downloadVideoThumb(message.id) },
+                        // GIFs loop in the player like in every Telegram client.
+                        onOpen = { navController.navigate(Routes.videoPlay(chatId, message.id, topicId, loop = true)) },
                     )
                 } else if (content is MessageContent.Document && !message.deletedLocally) {
                     DocumentBubble(
@@ -317,6 +331,7 @@ private fun MessageBubble(message: TgMessage) {
             is MessageContent.Photo -> "📷 ${c.caption.ifEmpty { "Фото" }}"
             is MessageContent.Video -> "📹 ${c.caption.ifEmpty { "Видео" }}"
             is MessageContent.VideoNote -> "⭕ Кружок"
+            is MessageContent.Animation -> "GIF ${c.caption}".trim()
             is MessageContent.Sticker -> c.emoji
             is MessageContent.Document -> "📎 ${c.fileName}"
             is MessageContent.Unsupported -> "…"
@@ -550,7 +565,7 @@ private fun StickerBubble(
 @Composable
 private fun VideoBubble(
     message: TgMessage,
-    durationSeconds: Int,
+    badge: String,
     caption: String,
     aspect: Float,
     miniThumb: ByteArray?,
@@ -627,7 +642,7 @@ private fun VideoBubble(
                 modifier = Modifier.align(Alignment.Center),
             )
             Text(
-                text = formatVoiceDuration(durationSeconds),
+                text = badge,
                 fontSize = 10.sp,
                 color = Color.White,
                 modifier = Modifier

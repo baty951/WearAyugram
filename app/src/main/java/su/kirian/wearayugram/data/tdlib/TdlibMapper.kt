@@ -118,6 +118,18 @@ private fun TdApi.MessageContent.toDomainContent(): MessageContent = when (this)
         localPath = video.video.local.path
             .takeIf { video.video.local.isDownloadingCompleted }
     )
+    is TdApi.MessageAnimation -> MessageContent.Animation(
+        caption = caption?.text ?: "",
+        fileId = animation.animation.id,
+        thumbFileId = animation.thumbnail?.file?.id ?: 0,
+        width = animation.width,
+        height = animation.height,
+        miniThumb = animation.minithumbnail?.data,
+        thumbPath = animation.thumbnail?.file?.local?.path
+            ?.takeIf { animation.thumbnail?.file?.local?.isDownloadingCompleted == true },
+        localPath = animation.animation.local.path
+            .takeIf { animation.animation.local.isDownloadingCompleted }
+    )
     is TdApi.MessageVideoNote -> MessageContent.VideoNote(
         durationSeconds = videoNote.duration,
         fileId = videoNote.video.id,

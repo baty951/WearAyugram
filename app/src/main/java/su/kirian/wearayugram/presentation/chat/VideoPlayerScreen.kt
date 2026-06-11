@@ -27,7 +27,13 @@ import su.kirian.wearayugram.WearAyugramApp
  * swipe-to-dismiss.
  */
 @Composable
-fun VideoPlayerScreen(navController: NavController, chatId: Long, messageId: Long, topicId: Int = 0) {
+fun VideoPlayerScreen(
+    navController: NavController,
+    chatId: Long,
+    messageId: Long,
+    topicId: Int = 0,
+    loop: Boolean = false, // GIF-анимации зацикливаются
+) {
     val app = navController.context.applicationContext as WearAyugramApp
 
     var path by remember { mutableStateOf<String?>(null) }
@@ -49,7 +55,10 @@ fun VideoPlayerScreen(navController: NavController, chatId: Long, messageId: Lon
                 factory = { ctx ->
                     VideoView(ctx).apply {
                         setVideoPath(p)
-                        setOnPreparedListener { it.start() }
+                        setOnPreparedListener {
+                            it.isLooping = loop
+                            it.start()
+                        }
                         // Setting a click listener makes the view clickable.
                         setOnClickListener { if (isPlaying) pause() else start() }
                         videoView = this

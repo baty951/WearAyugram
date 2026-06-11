@@ -93,6 +93,7 @@ class MessageRepositoryImpl(
                         is MessageContent.Photo -> "📷 Фото"
                         is MessageContent.Video -> "📹 Видео"
                         is MessageContent.VideoNote -> "⭕ Кружок"
+                        is MessageContent.Animation -> "GIF"
                         is MessageContent.Sticker -> c.emoji
                         is MessageContent.Document -> "📎 ${c.fileName}"
                         is MessageContent.Unsupported -> "Сообщение"
@@ -298,6 +299,7 @@ class MessageRepositoryImpl(
         val thumbFileId = when (content) {
             is MessageContent.Video -> content.thumbPath?.let { return it } ?: content.thumbFileId
             is MessageContent.VideoNote -> content.thumbPath?.let { return it } ?: content.thumbFileId
+            is MessageContent.Animation -> content.thumbPath?.let { return it } ?: content.thumbFileId
             else -> return null
         }
         val path = fileDownloader.download(thumbFileId) ?: return null
@@ -305,6 +307,7 @@ class MessageRepositoryImpl(
             when (c) {
                 is MessageContent.Video -> c.copy(thumbPath = path)
                 is MessageContent.VideoNote -> c.copy(thumbPath = path)
+                is MessageContent.Animation -> c.copy(thumbPath = path)
                 else -> c
             }
         }
@@ -320,6 +323,7 @@ class MessageRepositoryImpl(
         val fileId = when (content) {
             is MessageContent.Video -> content.localPath?.let { return it } ?: content.fileId
             is MessageContent.VideoNote -> content.localPath?.let { return it } ?: content.fileId
+            is MessageContent.Animation -> content.localPath?.let { return it } ?: content.fileId
             else -> return null
         }
         val path = fileDownloader.download(fileId, FileDownloader.VIDEO_TIMEOUT_MS) ?: return null
@@ -327,6 +331,7 @@ class MessageRepositoryImpl(
             when (c) {
                 is MessageContent.Video -> c.copy(localPath = path)
                 is MessageContent.VideoNote -> c.copy(localPath = path)
+                is MessageContent.Animation -> c.copy(localPath = path)
                 else -> c
             }
         }

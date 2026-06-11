@@ -54,6 +54,19 @@ sealed class MessageContent {
         val localPath: String?,
     ) : MessageContent()
 
+    // Telegram "GIFs": MP4 animations, displayed like videos but looped in player.
+    @Suppress("ArrayInDataClass")
+    data class Animation(
+        val caption: String,
+        val fileId: Int,
+        val thumbFileId: Int,
+        val width: Int,
+        val height: Int,
+        val miniThumb: ByteArray?,
+        val thumbPath: String?,
+        val localPath: String?,
+    ) : MessageContent()
+
     @Suppress("ArrayInDataClass")
     data class VideoNote(
         val durationSeconds: Int,
