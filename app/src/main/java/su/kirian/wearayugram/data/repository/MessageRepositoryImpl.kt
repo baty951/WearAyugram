@@ -29,6 +29,7 @@ import su.kirian.wearayugram.domain.model.TgMessageEdit
 import su.kirian.wearayugram.data.tdlib.FileDownloader
 import su.kirian.wearayugram.data.tdlib.TelegramClient
 import su.kirian.wearayugram.data.tdlib.toDomain
+import su.kirian.wearayugram.data.tdlib.toDomainContent
 import su.kirian.wearayugram.data.tdlib.toDomainReactions
 import su.kirian.wearayugram.domain.model.MessageContent
 import su.kirian.wearayugram.domain.model.TgMessage
@@ -72,6 +73,14 @@ class MessageRepositoryImpl(
             is MessageContent.Animation -> "GIF"
             is MessageContent.Sticker -> "${c.emoji} Стикер"
             is MessageContent.Document -> "📎 ${c.fileName}"
+            is MessageContent.Poll -> "📊 ${c.question}".take(60)
+            is MessageContent.Location -> "📍 Геопозиция"
+            is MessageContent.Venue -> "📍 ${c.title}"
+            is MessageContent.Contact -> "👤 ${c.name}"
+            is MessageContent.Dice -> c.emoji
+            is MessageContent.Call -> "📞 Звонок"
+            is MessageContent.AnimatedEmoji -> c.emoji
+            is MessageContent.Service -> c.text
             is MessageContent.Unsupported -> "Сообщение"
         }
         return if (msg.senderName.isNotEmpty()) "${msg.senderName}: $body" else body
@@ -135,6 +144,21 @@ class MessageRepositoryImpl(
             .onEach { mutedChats[it.chatId] = isMutedSettings(it.notificationSettings) }
             .launchIn(scope)
 
+        // Inline content changes: poll vote counts, media replacing placeholders etc.
+        client.updatesOf<TdApi.UpdateMessageContent>()
+            .onEach { update ->
+                val newContent = runCatching { update.newContent.toDomainContent() }.getOrNull()
+                    ?: return@onEach
+                flowsOfChat(update.chatId).forEach { flow ->
+                    flow.update { list ->
+                        list.map {
+                            if (it.id == update.messageId) it.copy(content = newContent) else it
+                        }
+                    }
+                }
+            }
+            .launchIn(scope)
+
         client.updatesOf<TdApi.UpdateMessageInteractionInfo>()
             .onEach { update ->
                 val reactions = update.interactionInfo?.reactions.toDomainReactions()
@@ -185,6 +209,14 @@ class MessageRepositoryImpl(
                         is MessageContent.Animation -> "GIF"
                         is MessageContent.Sticker -> c.emoji
                         is MessageContent.Document -> "📎 ${c.fileName}"
+                        is MessageContent.Poll -> "📊 ${c.question}"
+                        is MessageContent.Location -> "📍 Геопозиция"
+                        is MessageContent.Venue -> "📍 ${c.title}"
+                        is MessageContent.Contact -> "👤 ${c.name}"
+                        is MessageContent.Dice -> c.emoji
+                        is MessageContent.Call -> "📞 Звонок"
+                        is MessageContent.AnimatedEmoji -> c.emoji
+                        is MessageContent.Service -> c.text
                         is MessageContent.Unsupported -> "Сообщение"
                     }
                     showMessageNotification(name, text)
@@ -526,6 +558,12 @@ class MessageRepositoryImpl(
                 client.send(TdApi.AddMessageReaction(chatId, messageId, TdApi.ReactionTypeEmoji(emoji), false, true))
             }
         }
+    }
+
+    override suspend fun votePoll(chatId: Long, messageId: Long, optionIds: IntArray, topicId: Int) {
+        // Multi-answer polls require the whole set in one call, so the UI decides
+        // the final selection and we just submit it (empty = retract).
+        runCatching { client.send(TdApi.SetPollAnswer(chatId, messageId, optionIds)) }
     }
 
     override suspend fun forwardMessage(toChatId: Long, fromChatId: Long, messageId: Long): Boolean =

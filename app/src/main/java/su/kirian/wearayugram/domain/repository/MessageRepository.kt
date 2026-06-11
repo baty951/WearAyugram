@@ -31,5 +31,7 @@ interface MessageRepository {
     suspend fun toggleReaction(chatId: Long, messageId: Long, emoji: String, topicId: Int = 0)
     /** Forwards the message to another chat. Returns false if TDLib rejected it. */
     suspend fun forwardMessage(toChatId: Long, fromChatId: Long, messageId: Long): Boolean
+    /** Sets the full poll answer (all chosen option indices); empty array retracts. */
+    suspend fun votePoll(chatId: Long, messageId: Long, optionIds: IntArray, topicId: Int = 0)
     fun setOpenChat(chatId: Long)
 }

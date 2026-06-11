@@ -222,7 +222,16 @@ fun ChatScreen(navController: NavController, chatId: Long, topicId: Int = 0) {
                     navController.navigate(Routes.reactions(chatId, message.id, topicId))
                 }
                 // Deleted photos keep the textual "🚫 медиа" bubble.
-                if (content is MessageContent.Voice && !message.deletedLocally) {
+                if (content is MessageContent.Service) {
+                    ServiceLine(text = content.text)
+                } else if (content is MessageContent.Poll && !message.deletedLocally) {
+                    PollBubble(
+                        message = message,
+                        poll = content,
+                        onVote = { ids -> viewModel.votePoll(message.id, ids) },
+                        onLongPress = openReactions,
+                    )
+                } else if (content is MessageContent.Voice && !message.deletedLocally) {
                     VoiceBubble(
                         message = message,
                         voice = content,
@@ -360,7 +369,20 @@ private fun MessageBubble(
             is MessageContent.Animation -> "GIF ${c.caption}".trim()
             is MessageContent.Sticker -> c.emoji
             is MessageContent.Document -> "📎 ${c.fileName}"
-            is MessageContent.Unsupported -> "…"
+            is MessageContent.Poll -> "📊 ${c.question}"
+            is MessageContent.Location ->
+                "📍 %.5f, %.5f".format(c.latitude, c.longitude) + if (c.isLive) " · live" else ""
+            is MessageContent.Venue -> "📍 ${c.title}\n${c.address}"
+            is MessageContent.Contact -> "👤 ${c.name}\n${c.phoneNumber}"
+            is MessageContent.Dice -> "${c.emoji} ${c.value}"
+            is MessageContent.Call -> {
+                val kind = if (c.isVideo) "📹 Видеозвонок" else "📞 Звонок"
+                if (c.durationSeconds > 0) "$kind · ${formatVoiceDuration(c.durationSeconds)}"
+                else "$kind · пропущен"
+            }
+            is MessageContent.AnimatedEmoji -> c.emoji
+            is MessageContent.Service -> c.text
+            is MessageContent.Unsupported -> "Сообщение не поддерживается"
         }
         buildAnnotatedString {
             if (!isOut && message.senderName.isNotEmpty()) {
@@ -413,6 +435,127 @@ private fun MessageBubble(
             }
             .padding(horizontal = 12.dp, vertical = 7.dp)
     )
+}
+
+// Centered grey system line ("joined", "pinned a message", ...) — not a bubble.
+@Composable
+private fun ServiceLine(text: String) {
+    Text(
+        text = text,
+        textAlign = TextAlign.Center,
+        fontSize = 10.sp,
+        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp),
+    )
+}
+
+@Composable
+private fun PollBubble(
+    message: TgMessage,
+    poll: MessageContent.Poll,
+    onVote: (IntArray) -> Unit,
+    onLongPress: (() -> Unit)? = null,
+) {
+    val isOut = message.isOutgoing
+    val cs = MaterialTheme.colorScheme
+    val textColor = if (isOut) cs.onPrimaryContainer else cs.onSurface
+
+    val voted = poll.options.any { it.isChosen }
+    // Multi-answer polls submit the whole set at once: options toggle local
+    // checkboxes and an explicit "Vote" button sends them together.
+    val multiSelecting = poll.allowsMultipleAnswers && !voted && !poll.isClosed
+    var selected by remember(message.id, voted) { mutableStateOf(setOf<Int>()) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(
+                start = if (isOut) 32.dp else 8.dp,
+                end = if (isOut) 8.dp else 32.dp,
+                top = 3.dp,
+                bottom = 3.dp
+            )
+            .clip(RoundedCornerShape(16.dp))
+            .background(if (isOut) cs.primaryContainer else cs.surfaceContainerHigh)
+            .pointerInput(message) {
+                detectTapGestures(onLongPress = { onLongPress?.invoke() })
+            }
+            .padding(horizontal = 12.dp, vertical = 7.dp)
+    ) {
+        val header = remember(message) {
+            buildAnnotatedString {
+                if (!isOut && message.senderName.isNotEmpty()) {
+                    withStyle(SpanStyle(color = cs.tertiary, fontWeight = FontWeight.SemiBold, fontSize = 11.sp)) {
+                        append(message.senderName)
+                    }
+                    append("\n")
+                }
+                withStyle(SpanStyle(color = textColor, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)) {
+                    append("📊 ${poll.question}")
+                }
+            }
+        }
+        Text(text = header, lineHeight = 17.sp)
+
+        poll.options.forEachIndexed { index, option ->
+            val mark = when {
+                multiSelecting -> if (index in selected) "☑ " else "☐ "
+                option.isChosen -> "● "
+                else -> "○ "
+            }
+            val highlighted = if (multiSelecting) index in selected else option.isChosen
+            Text(
+                text = mark + option.text +
+                    if (!multiSelecting) "  ${option.votePercentage}%" else "",
+                fontSize = 13.sp,
+                color = if (highlighted) cs.tertiary else textColor,
+                lineHeight = 16.sp,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 2.dp)
+                    .let { m ->
+                        when {
+                            multiSelecting -> m.clickable {
+                                selected = if (index in selected) selected - index else selected + index
+                            }
+                            // Single-answer: tap votes, tapping own choice retracts.
+                            !poll.isClosed -> m.clickable {
+                                onVote(if (option.isChosen) IntArray(0) else intArrayOf(index))
+                            }
+                            else -> m
+                        }
+                    },
+            )
+        }
+
+        if (multiSelecting && selected.isNotEmpty()) {
+            Text(
+                text = "✔ Голосовать (${selected.size})",
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = cs.tertiary,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp)
+                    .clickable { onVote(selected.sorted().toIntArray()) },
+            )
+        }
+
+        val footer = remember(message) {
+            val kind = if (poll.isQuiz) "викторина" else if (poll.isAnonymous) "анонимный опрос" else "опрос"
+            val state = if (poll.isClosed) " · закрыт" else ""
+            "${poll.totalVoterCount} голосов · $kind$state   " +
+                formatMsgTime(message.date) + readMark(message)
+        }
+        Text(
+            text = footer,
+            fontSize = 9.sp,
+            color = textColor.copy(alpha = 0.55f),
+            lineHeight = 12.sp,
+        )
+    }
 }
 
 @Composable

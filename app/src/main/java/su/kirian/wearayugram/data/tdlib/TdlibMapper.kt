@@ -8,6 +8,7 @@ import su.kirian.wearayugram.domain.model.MessageContent
 import su.kirian.wearayugram.domain.model.TgChat
 import su.kirian.wearayugram.domain.model.TgChatFolder
 import su.kirian.wearayugram.domain.model.TgMessage
+import su.kirian.wearayugram.domain.model.TgPollOption
 import su.kirian.wearayugram.domain.model.TgReaction
 import su.kirian.wearayugram.domain.model.TgTopic
 import su.kirian.wearayugram.domain.model.TgUser
@@ -91,11 +92,17 @@ fun TdApi.MessageContent.toPreviewText(): String = when (this) {
     is TdApi.MessageSticker -> "${sticker.emoji} Стикер"
     is TdApi.MessageAnimation -> "GIF"
     is TdApi.MessageCall -> "📞 Звонок"
+    is TdApi.MessagePoll -> "📊 ${poll.question?.text ?: "Опрос"}"
+    is TdApi.MessageLocation -> "📍 Геопозиция"
+    is TdApi.MessageVenue -> "📍 ${venue.title}"
+    is TdApi.MessageContact -> "👤 Контакт"
+    is TdApi.MessageDice -> emoji
+    is TdApi.MessageAnimatedEmoji -> emoji
     is TdApi.MessageContactRegistered -> "Вступил в Telegram"
     else -> "Сообщение"
 }
 
-private fun TdApi.MessageContent.toDomainContent(): MessageContent = when (this) {
+fun TdApi.MessageContent.toDomainContent(): MessageContent = when (this) {
     is TdApi.MessageText -> MessageContent.Text(text.text)
     is TdApi.MessageVoiceNote -> MessageContent.Voice(
         durationSeconds = voiceNote.duration,
@@ -179,6 +186,52 @@ private fun TdApi.MessageContent.toDomainContent(): MessageContent = when (this)
         localPath = document.document.local.path
             .takeIf { document.document.local.isDownloadingCompleted }
     )
+    is TdApi.MessagePoll -> MessageContent.Poll(
+        question = poll.question?.text ?: "",
+        options = poll.options.map {
+            TgPollOption(
+                text = it.text?.text ?: "",
+                votePercentage = it.votePercentage,
+                isChosen = it.isChosen,
+            )
+        },
+        totalVoterCount = poll.totalVoterCount,
+        isAnonymous = poll.isAnonymous,
+        isQuiz = poll.type is TdApi.PollTypeQuiz,
+        isClosed = poll.isClosed,
+        allowsMultipleAnswers = poll.allowsMultipleAnswers,
+    )
+    is TdApi.MessageLocation -> MessageContent.Location(
+        latitude = location.latitude,
+        longitude = location.longitude,
+        isLive = livePeriod > 0,
+    )
+    is TdApi.MessageVenue -> MessageContent.Venue(venue.title, venue.address)
+    is TdApi.MessageContact -> MessageContent.Contact(
+        name = "${contact.firstName} ${contact.lastName}".trim(),
+        phoneNumber = contact.phoneNumber,
+    )
+    is TdApi.MessageDice -> MessageContent.Dice(emoji, value)
+    is TdApi.MessageCall -> MessageContent.Call(isVideo, duration)
+    is TdApi.MessageAnimatedEmoji -> MessageContent.AnimatedEmoji(emoji)
+    // Service events — text only, rendered as a centered system line.
+    is TdApi.MessageChatChangeTitle -> MessageContent.Service("Название: $title")
+    is TdApi.MessageChatChangePhoto -> MessageContent.Service("Фото чата обновлено")
+    is TdApi.MessageChatAddMembers -> MessageContent.Service("Участники добавлены")
+    is TdApi.MessageChatJoinByLink -> MessageContent.Service("Вступление по ссылке")
+    is TdApi.MessageChatJoinByRequest -> MessageContent.Service("Заявка на вступление принята")
+    is TdApi.MessageChatDeleteMember -> MessageContent.Service("Участник покинул чат")
+    is TdApi.MessagePinMessage -> MessageContent.Service("Сообщение закреплено")
+    is TdApi.MessageBasicGroupChatCreate -> MessageContent.Service("Группа создана")
+    is TdApi.MessageSupergroupChatCreate -> MessageContent.Service("Группа создана")
+    is TdApi.MessageForumTopicCreated -> MessageContent.Service("Тема создана: $name")
+    is TdApi.MessageForumTopicEdited ->
+        MessageContent.Service(if (name.isNotEmpty()) "Тема переименована: $name" else "Тема изменена")
+    is TdApi.MessageVideoChatStarted -> MessageContent.Service("Видеочат начат")
+    is TdApi.MessageVideoChatEnded -> MessageContent.Service("Видеочат завершён")
+    is TdApi.MessageContactRegistered -> MessageContent.Service("Вступление в Telegram")
+    is TdApi.MessageScreenshotTaken -> MessageContent.Service("Сделан скриншот")
+    is TdApi.MessageChatSetMessageAutoDeleteTime -> MessageContent.Service("Таймер автоудаления изменён")
     else -> MessageContent.Unsupported
 }
 

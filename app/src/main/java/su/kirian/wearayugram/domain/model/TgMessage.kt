@@ -105,5 +105,38 @@ sealed class MessageContent {
         val fileId: Int,
         val localPath: String?,
     ) : MessageContent()
+    data class Poll(
+        val question: String,
+        val options: List<TgPollOption>,
+        val totalVoterCount: Int,
+        val isAnonymous: Boolean,
+        val isQuiz: Boolean,
+        val isClosed: Boolean,
+        val allowsMultipleAnswers: Boolean,
+    ) : MessageContent()
+
+    data class Location(
+        val latitude: Double,
+        val longitude: Double,
+        val isLive: Boolean,
+    ) : MessageContent()
+
+    data class Venue(val title: String, val address: String) : MessageContent()
+    data class Contact(val name: String, val phoneNumber: String) : MessageContent()
+    data class Dice(val emoji: String, val value: Int) : MessageContent()
+    data class Call(val isVideo: Boolean, val durationSeconds: Int) : MessageContent()
+    data class AnimatedEmoji(val emoji: String) : MessageContent()
+
+    // System/service events ("joined", "pinned", "topic created", ...) rendered as
+    // a centered grey line, not a bubble.
+    data class Service(val text: String) : MessageContent()
+
     data object Unsupported : MessageContent()
 }
+
+@Immutable
+data class TgPollOption(
+    val text: String,
+    val votePercentage: Int,
+    val isChosen: Boolean,
+)

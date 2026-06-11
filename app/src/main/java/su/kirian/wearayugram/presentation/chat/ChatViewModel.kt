@@ -76,6 +76,10 @@ class ChatViewModel(app: Application, savedState: SavedStateHandle) : AndroidVie
         viewModelScope.launch { msgRepo.downloadSticker(chatId, messageId, topicId) }
     }
 
+    fun votePoll(messageId: Long, optionIds: IntArray) {
+        viewModelScope.launch { msgRepo.votePoll(chatId, messageId, optionIds, topicId) }
+    }
+
     // ---- Voice playback ----
 
     private var mediaPlayer: MediaPlayer? = null
