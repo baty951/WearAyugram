@@ -21,8 +21,11 @@ import su.kirian.wearayugram.ayugram.AntiRevokeManager
 import su.kirian.wearayugram.ayugram.AyugramSettings
 import su.kirian.wearayugram.ayugram.DeleteNotifyManager
 import su.kirian.wearayugram.ayugram.GhostModeManager
+import kotlinx.coroutines.flow.map
 import su.kirian.wearayugram.data.local.AppDatabase
 import su.kirian.wearayugram.data.local.DeletedMessage
+import su.kirian.wearayugram.data.local.MessageEdit
+import su.kirian.wearayugram.domain.model.TgMessageEdit
 import su.kirian.wearayugram.data.tdlib.FileDownloader
 import su.kirian.wearayugram.data.tdlib.TelegramClient
 import su.kirian.wearayugram.data.tdlib.toDomain
@@ -38,6 +41,7 @@ class MessageRepositoryImpl(
 ) : MessageRepository {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val editDao = database.messageEditDao()
 
     // Keyed by chat + forum topic; topicId 0 = a regular (non-forum) chat. Forum
     // supergroups get one flow per topic, so each topic screen sees only its thread.
@@ -53,6 +57,16 @@ class MessageRepositoryImpl(
     private fun topicOf(message: TdApi.Message): Int =
         (message.topicId as? TdApi.MessageTopicForum)?.forumTopicId ?: 0
 
+    // The editable text of a message: the body for text messages, the caption for
+    // captioned media. Everything else has no text worth versioning.
+    private fun textOf(c: MessageContent): String? = when (c) {
+        is MessageContent.Text -> c.text
+        is MessageContent.Photo -> c.caption
+        is MessageContent.Video -> c.caption
+        is MessageContent.Animation -> c.caption
+        else -> null
+    }
+
     private var openChatId: Long = -1L
 
     // chatId -> lastReadOutboxMessageId: outgoing messages with id <= this are read
@@ -61,6 +75,11 @@ class MessageRepositoryImpl(
     private val readOutbox = java.util.concurrent.ConcurrentHashMap<Long, Long>()
 
     override fun setOpenChat(chatId: Long) { openChatId = chatId }
+
+    override fun editHistory(messageId: Long): Flow<List<TgMessageEdit>> =
+        editDao.getForMessage(messageId).map { list ->
+            list.map { TgMessageEdit(id = it.editId, text = it.oldText, editedAt = it.editedAt) }
+        }
 
     init {
         client.updatesOf<TdApi.UpdateChatReadOutbox>()
@@ -112,9 +131,31 @@ class MessageRepositoryImpl(
                 }.getOrNull() ?: return@onEach
                 val name = resolveSenderName(refreshed)
                 val lastRead = readOutbox[update.chatId] ?: 0
+                val newDomain = refreshed.toDomain(name, lastRead)
+
+                // Edit history: TDLib never keeps old versions, so the copy we still
+                // hold in the flow is the only chance to save what the text was.
+                val oldText = chatFlows
+                    .firstNotNullOfOrNull { f -> f.value.firstOrNull { it.id == update.messageId } }
+                    ?.content?.let { textOf(it) }
+                val newText = textOf(newDomain.content)
+                if (!oldText.isNullOrBlank() && oldText != newText) {
+                    scope.launch {
+                        runCatching {
+                            editDao.insert(
+                                MessageEdit(
+                                    messageId = update.messageId,
+                                    chatId = update.chatId,
+                                    oldText = oldText,
+                                )
+                            )
+                        }
+                    }
+                }
+
                 chatFlows.forEach { flow ->
                     flow.update { list ->
-                        list.map { if (it.id == update.messageId) refreshed.toDomain(name, lastRead) else it }
+                        list.map { if (it.id == update.messageId) newDomain else it }
                     }
                 }
             }

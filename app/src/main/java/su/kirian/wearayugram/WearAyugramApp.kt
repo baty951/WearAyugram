@@ -47,7 +47,9 @@ class WearAyugramApp : Application() {
 
         AyugramSettings.init(this)
 
-        database = Room.databaseBuilder(this, AppDatabase::class.java, "wearayugram.db").build()
+        database = Room.databaseBuilder(this, AppDatabase::class.java, "wearayugram.db")
+            .addMigrations(AppDatabase.MIGRATION_1_2)
+            .build()
 
         val dbDir = getDir(Constants.TDLIB_DB_DIR, MODE_PRIVATE).absolutePath
         telegramClient = TelegramClient.init(dbDir)

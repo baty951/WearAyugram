@@ -10,6 +10,7 @@ object Routes {
     const val CHAT_TOPIC = "chat/{chatId}/topic/{topicId}"
     const val PHOTO_VIEW = "photo/{chatId}/{messageId}/{topicId}"
     const val VIDEO_PLAY = "video/{chatId}/{messageId}/{topicId}/{loop}"
+    const val EDIT_HISTORY = "edit_history/{messageId}"
     const val SEARCH = "search"
     const val SETTINGS      = "settings"
     const val PROXY_SETTINGS = "proxy_settings"
@@ -20,4 +21,5 @@ object Routes {
     fun photoView(chatId: Long, messageId: Long, topicId: Int) = "photo/$chatId/$messageId/$topicId"
     fun videoPlay(chatId: Long, messageId: Long, topicId: Int, loop: Boolean = false) =
         "video/$chatId/$messageId/$topicId/${if (loop) 1 else 0}"
+    fun editHistory(messageId: Long) = "edit_history/$messageId"
 }

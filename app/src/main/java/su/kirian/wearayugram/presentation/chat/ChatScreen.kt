@@ -292,7 +292,13 @@ fun ChatScreen(navController: NavController, chatId: Long, topicId: Int = 0) {
                         onOpen = { navController.navigate(Routes.photoView(chatId, message.id, topicId)) },
                     )
                 } else {
-                    MessageBubble(message = message)
+                    MessageBubble(
+                        message = message,
+                        // Edited messages open their saved version history.
+                        onOpenHistory = if (message.isEdited) {
+                            { navController.navigate(Routes.editHistory(message.id)) }
+                        } else null,
+                    )
                 }
             }
         }
@@ -300,7 +306,7 @@ fun ChatScreen(navController: NavController, chatId: Long, topicId: Int = 0) {
 }
 
 @Composable
-private fun MessageBubble(message: TgMessage) {
+private fun MessageBubble(message: TgMessage, onOpenHistory: (() -> Unit)? = null) {
     val isOut = message.isOutgoing
     // A single Text node renders reliably as a TransformingLazyColumn item, while a
     // raw Column collapses to one visible item. So the whole bubble is ONE Text built
@@ -347,7 +353,8 @@ private fun MessageBubble(message: TgMessage) {
                 append(bodyText)
             }
             withStyle(SpanStyle(color = timeColor, fontSize = 9.sp)) {
-                append("   " + formatMsgTime(message.date) + readMark(message))
+                val edited = if (message.isEdited) " ✎" else ""
+                append("   " + formatMsgTime(message.date) + edited + readMark(message))
             }
         }
     }
@@ -376,6 +383,7 @@ private fun MessageBubble(message: TgMessage) {
                 )
             )
             .background(bubbleColor)
+            .let { if (onOpenHistory != null) it.clickable(onClick = onOpenHistory) else it }
             .padding(horizontal = 12.dp, vertical = 7.dp)
     )
 }

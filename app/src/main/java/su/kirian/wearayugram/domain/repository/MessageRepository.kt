@@ -2,6 +2,7 @@ package su.kirian.wearayugram.domain.repository
 
 import kotlinx.coroutines.flow.Flow
 import su.kirian.wearayugram.domain.model.TgMessage
+import su.kirian.wearayugram.domain.model.TgMessageEdit
 
 // topicId: forum topic id for forum supergroups, 0 for regular chats.
 interface MessageRepository {
@@ -24,5 +25,7 @@ interface MessageRepository {
     suspend fun downloadSticker(chatId: Long, messageId: Long, topicId: Int = 0): String?
     /** Downloads a document file and returns the local path. */
     suspend fun downloadDocument(chatId: Long, messageId: Long, topicId: Int = 0): String?
+    /** Saved pre-edit versions of the message, oldest first. */
+    fun editHistory(messageId: Long): Flow<List<TgMessageEdit>>
     fun setOpenChat(chatId: Long)
 }
