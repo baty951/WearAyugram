@@ -1,5 +1,9 @@
 package su.kirian.wearayugram.presentation.chat
 
+import android.app.Activity
+import android.app.RemoteInput
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -17,9 +21,11 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.ButtonDefaults
+import androidx.wear.compose.material3.FilledTonalButton
 import androidx.wear.compose.material3.ListHeader
 import androidx.wear.compose.material3.ScreenScaffold
 import androidx.wear.compose.material3.Text
+import androidx.wear.input.RemoteInputIntentHelper
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
@@ -55,6 +61,28 @@ fun ReactionPickerScreen(navController: NavController, chatId: Long, messageId: 
         }
     }
 
+    val replyLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val replies = RemoteInput.getResultsFromIntent(result.data)
+            val text = replies?.getCharSequence(KEY_REPLY)?.toString()?.trim()
+            if (!text.isNullOrBlank()) {
+                scope.launch {
+                    app.messageRepository.sendText(chatId, text, topicId, replyToMessageId = messageId)
+                    navController.popBackStack()
+                }
+            }
+        }
+    }
+
+    fun launchReplyInput() {
+        val remoteInput = RemoteInput.Builder(KEY_REPLY).setLabel("Ответ").build()
+        val intent = RemoteInputIntentHelper.createActionRemoteInputIntent()
+        RemoteInputIntentHelper.putRemoteInputsExtra(intent, listOf(remoteInput))
+        replyLauncher.launch(intent)
+    }
+
     // Plain LazyColumn (not TransformingLazyColumn): a Row works as an item root here.
     ScreenScaffold(scrollState = listState) { contentPadding ->
         LazyColumn(
@@ -64,8 +92,15 @@ fun ReactionPickerScreen(navController: NavController, chatId: Long, messageId: 
         ) {
             item {
                 ListHeader(modifier = Modifier.fillMaxWidth()) {
-                    Text("Реакция")
+                    Text("Действия")
                 }
+            }
+            item {
+                FilledTonalButton(
+                    onClick = { launchReplyInput() },
+                    label = { Text("↩ Ответить") },
+                    modifier = Modifier.fillMaxWidth(),
+                )
             }
             items(REACTION_EMOJIS.chunked(4).size) { rowIndex ->
                 val row = REACTION_EMOJIS.chunked(4)[rowIndex]
@@ -88,3 +123,5 @@ fun ReactionPickerScreen(navController: NavController, chatId: Long, messageId: 
         }
     }
 }
+
+private const val KEY_REPLY = "reply_text"

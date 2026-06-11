@@ -34,7 +34,13 @@ fun TdApi.Message.toDomain(senderName: String, lastReadOutboxMessageId: Long = 0
     isOutgoing = isOutgoing,
     isEdited = editDate > 0,
     isRead = isOutgoing && id <= lastReadOutboxMessageId,
-    reactions = interactionInfo?.reactions.toDomainReactions()
+    reactions = interactionInfo?.reactions.toDomainReactions(),
+    replyToMessageId = (replyTo as? TdApi.MessageReplyToMessage)?.messageId ?: 0,
+    // Quote or inline content (TDLib attaches them when the original is remote);
+    // otherwise the repository resolves the preview from the loaded history.
+    replyPreview = (replyTo as? TdApi.MessageReplyToMessage)?.let { r ->
+        r.quote?.text?.text?.takeIf { it.isNotBlank() } ?: r.content?.toPreviewText()
+    }
 )
 
 // Custom-emoji reactions need sticker rendering, so only plain emoji ones are shown.

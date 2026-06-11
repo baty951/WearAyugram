@@ -45,6 +45,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
@@ -368,6 +369,7 @@ private fun MessageBubble(
                 }
                 append("\n")
             }
+            appendReplyQuote(message, timeColor)
             withStyle(SpanStyle(color = textColor, fontSize = 14.sp)) {
                 append(bodyText)
             }
@@ -443,6 +445,7 @@ private fun VoiceBubble(
                 }
                 append("\n")
             }
+            appendReplyQuote(message, textColor.copy(alpha = 0.55f))
             withStyle(SpanStyle(color = textColor, fontSize = 14.sp)) {
                 append(body)
             }
@@ -504,6 +507,7 @@ private fun DocumentBubble(
                 }
                 append("\n")
             }
+            appendReplyQuote(message, textColor.copy(alpha = 0.55f))
             withStyle(SpanStyle(color = textColor, fontSize = 14.sp)) {
                 append("📎 ${doc.fileName.ifEmpty { "Файл" }}")
             }
@@ -654,6 +658,7 @@ private fun VideoBubble(
     val textColor = if (isOut) cs.onPrimaryContainer else cs.onSurface
     val meta = remember(message, caption) {
         buildAnnotatedString {
+            appendReplyQuote(message, textColor.copy(alpha = 0.55f))
             if (caption.isNotEmpty()) {
                 withStyle(SpanStyle(color = textColor, fontSize = 13.sp)) { append(caption) }
             }
@@ -759,6 +764,7 @@ private fun PhotoBubble(
     val textColor = if (isOut) cs.onPrimaryContainer else cs.onSurface
     val caption = remember(message) {
         buildAnnotatedString {
+            appendReplyQuote(message, textColor.copy(alpha = 0.55f))
             if (photo.caption.isNotEmpty()) {
                 withStyle(SpanStyle(color = textColor, fontSize = 13.sp)) {
                     append(photo.caption)
@@ -818,6 +824,17 @@ private fun PhotoBubble(
             lineHeight = 16.sp,
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
         )
+    }
+}
+
+// Quoted original above a reply body: "↩ Sender: text", thin italic line.
+private fun androidx.compose.ui.text.AnnotatedString.Builder.appendReplyQuote(
+    message: TgMessage,
+    color: androidx.compose.ui.graphics.Color,
+) {
+    val preview = message.replyPreview ?: return
+    withStyle(SpanStyle(color = color, fontSize = 10.sp, fontStyle = FontStyle.Italic)) {
+        append("↩ $preview\n")
     }
 }
 

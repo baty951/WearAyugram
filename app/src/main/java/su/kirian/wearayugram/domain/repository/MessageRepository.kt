@@ -8,7 +8,7 @@ import su.kirian.wearayugram.domain.model.TgMessageEdit
 interface MessageRepository {
     fun messages(chatId: Long, topicId: Int = 0): Flow<List<TgMessage>>
     suspend fun loadHistory(chatId: Long, fromMessageId: Long = 0, limit: Int = 30, topicId: Int = 0)
-    suspend fun sendText(chatId: Long, text: String, topicId: Int = 0)
+    suspend fun sendText(chatId: Long, text: String, topicId: Int = 0, replyToMessageId: Long = 0)
     suspend fun sendVoice(chatId: Long, filePath: String, durationSeconds: Int, topicId: Int = 0)
     suspend fun markAsRead(chatId: Long, messageIds: LongArray)
     /** Downloads the chat-size photo of the message and returns the local path. */

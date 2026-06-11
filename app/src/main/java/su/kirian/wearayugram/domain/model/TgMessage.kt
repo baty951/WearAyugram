@@ -18,6 +18,10 @@ data class TgMessage(
     // null = never deleted, non-null = deleted locally by anti-revoke
     val deletedLocally: Boolean = false,
     val reactions: List<TgReaction> = emptyList(),
+    // Reply info: id of the replied message and a short "Sender: text" preview.
+    // preview == null while not yet resolved by the repository.
+    val replyToMessageId: Long = 0,
+    val replyPreview: String? = null,
 )
 
 @Immutable

@@ -58,6 +58,38 @@ class MessageRepositoryImpl(
     private fun topicOf(message: TdApi.Message): Int =
         (message.topicId as? TdApi.MessageTopicForum)?.forumTopicId ?: 0
 
+    // reply-message-id -> "Sender: preview". Replies usually point at messages from
+    // the same loaded batch; only misses go to GetRepliedMessage, cached afterwards.
+    private val replyPreviewCache = java.util.concurrent.ConcurrentHashMap<Long, String>()
+
+    private fun previewOf(msg: TgMessage): String {
+        val body = when (val c = msg.content) {
+            is MessageContent.Text -> c.text.take(60)
+            is MessageContent.Voice -> "🎤 Голосовое"
+            is MessageContent.Photo -> "📷 ${c.caption.ifEmpty { "Фото" }}".take(60)
+            is MessageContent.Video -> "📹 ${c.caption.ifEmpty { "Видео" }}".take(60)
+            is MessageContent.VideoNote -> "⭕ Кружок"
+            is MessageContent.Animation -> "GIF"
+            is MessageContent.Sticker -> "${c.emoji} Стикер"
+            is MessageContent.Document -> "📎 ${c.fileName}"
+            is MessageContent.Unsupported -> "Сообщение"
+        }
+        return if (msg.senderName.isNotEmpty()) "${msg.senderName}: $body" else body
+    }
+
+    /** Fills replyPreview for a reply message: local batch first, then TDLib. */
+    private suspend fun resolveReplyPreview(msg: TgMessage, batch: Map<Long, TgMessage>): TgMessage {
+        if (msg.replyToMessageId == 0L || msg.replyPreview != null) return msg
+        replyPreviewCache[msg.replyToMessageId]?.let { return msg.copy(replyPreview = it) }
+        val preview = batch[msg.replyToMessageId]?.let { previewOf(it) }
+            ?: runCatching {
+                val original = client.send(TdApi.GetRepliedMessage(msg.chatId, msg.id))
+                previewOf(original.toDomain(resolveSenderName(original)))
+            }.getOrNull()
+        if (preview != null) replyPreviewCache[msg.replyToMessageId] = preview
+        return if (preview != null) msg.copy(replyPreview = preview) else msg
+    }
+
     // The editable text of a message: the body for text messages, the caption for
     // captioned media. Everything else has no text worth versioning.
     private fun textOf(c: MessageContent): String? = when (c) {
@@ -135,8 +167,11 @@ class MessageRepositoryImpl(
             .onEach { update ->
                 val chatId = update.message.chatId
                 val name = resolveSenderName(update.message)
-                val domainMsg = update.message.toDomain(name, readOutbox[chatId] ?: 0)
                 val flow = flowOf(chatId, topicOf(update.message))
+                val domainMsg = resolveReplyPreview(
+                    update.message.toDomain(name, readOutbox[chatId] ?: 0),
+                    flow.value.associateBy { it.id },
+                )
                 flow.update { it + domainMsg }
                 // Notify for incoming messages not in the currently open chat;
                 // chats muted anywhere on the account stay silent on the watch too.
@@ -289,12 +324,14 @@ class MessageRepositoryImpl(
         }
 
         val lastReadOutbox = readOutbox[chatId] ?: 0
-        val messages = rawMessages
+        val mapped = rawMessages
             .mapNotNull { msg ->
                 val name = resolveSenderName(msg)
                 runCatching { msg.toDomain(name, lastReadOutbox) }.getOrNull()
             }
             .reversed()
+        val batchById = mapped.associateBy { it.id }
+        val messages = mapped.map { resolveReplyPreview(it, batchById) }
 
         // Merge with any locally-deleted messages from Room
         val deletedInRoom = runCatching {
@@ -311,7 +348,7 @@ class MessageRepositoryImpl(
         }
     }
 
-    override suspend fun sendText(chatId: Long, text: String, topicId: Int) {
+    override suspend fun sendText(chatId: Long, text: String, topicId: Int, replyToMessageId: Long) {
         val formatted = TdApi.FormattedText().apply {
             this.text = text
             this.entities = emptyArray()
@@ -323,6 +360,11 @@ class MessageRepositoryImpl(
         val request = TdApi.SendMessage().apply {
             this.chatId = chatId
             if (topicId != 0) this.topicId = TdApi.MessageTopicForum(topicId)
+            if (replyToMessageId != 0L) {
+                this.replyTo = TdApi.InputMessageReplyToMessage().apply {
+                    this.messageId = replyToMessageId
+                }
+            }
             this.inputMessageContent = content
         }
         client.send(request)
