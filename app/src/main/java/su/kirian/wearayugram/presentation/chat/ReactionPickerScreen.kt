@@ -30,6 +30,7 @@ import kotlinx.coroutines.launch
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import su.kirian.wearayugram.WearAyugramApp
+import su.kirian.wearayugram.presentation.Routes
 
 // Telegram's default reaction set; chats with a restricted set just reject the call.
 private val REACTION_EMOJIS = listOf(
@@ -99,6 +100,18 @@ fun ReactionPickerScreen(navController: NavController, chatId: Long, messageId: 
                 FilledTonalButton(
                     onClick = { launchReplyInput() },
                     label = { Text("↩ Ответить") },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            item {
+                FilledTonalButton(
+                    onClick = {
+                        // Replace this actions screen with the chat picker, so the
+                        // forward returns straight to the conversation.
+                        navController.popBackStack()
+                        navController.navigate(Routes.forward(chatId, messageId))
+                    },
+                    label = { Text("➡ Переслать") },
                     modifier = Modifier.fillMaxWidth(),
                 )
             }

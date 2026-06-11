@@ -528,6 +528,17 @@ class MessageRepositoryImpl(
         }
     }
 
+    override suspend fun forwardMessage(toChatId: Long, fromChatId: Long, messageId: Long): Boolean =
+        runCatching {
+            client.send(
+                TdApi.ForwardMessages().apply {
+                    this.chatId = toChatId
+                    this.fromChatId = fromChatId
+                    this.messageIds = longArrayOf(messageId)
+                }
+            )
+        }.isSuccess
+
     override suspend fun markAsRead(chatId: Long, messageIds: LongArray) {
         val ghostMode = runCatching { GhostModeManager.isEnabled.first() }.getOrDefault(false)
         if (ghostMode) return

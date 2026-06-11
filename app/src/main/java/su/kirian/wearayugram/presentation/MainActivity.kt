@@ -23,6 +23,7 @@ import su.kirian.wearayugram.presentation.auth.PhoneAuthScreen
 import su.kirian.wearayugram.presentation.auth.QrAuthScreen
 import su.kirian.wearayugram.presentation.chat.ChatScreen
 import su.kirian.wearayugram.presentation.chat.EditHistoryScreen
+import su.kirian.wearayugram.presentation.chat.ForwardPickerScreen
 import su.kirian.wearayugram.presentation.chat.PhotoViewScreen
 import su.kirian.wearayugram.presentation.chat.ReactionPickerScreen
 import su.kirian.wearayugram.presentation.chat.VideoPlayerScreen
@@ -111,6 +112,11 @@ fun WearApp() {
                 val topicId = backStack.arguments?.getString("topicId")?.toIntOrNull() ?: 0
                 val loop = backStack.arguments?.getString("loop") == "1"
                 VideoPlayerScreen(navController, chatId, messageId, topicId, loop)
+            }
+            composable(Routes.FORWARD) { backStack ->
+                val fromChatId = backStack.arguments?.getString("fromChatId")?.toLongOrNull() ?: return@composable
+                val messageId = backStack.arguments?.getString("messageId")?.toLongOrNull() ?: return@composable
+                ForwardPickerScreen(navController, fromChatId, messageId)
             }
             composable(Routes.REACTIONS) { backStack ->
                 val chatId = backStack.arguments?.getString("chatId")?.toLongOrNull() ?: return@composable

@@ -29,5 +29,7 @@ interface MessageRepository {
     fun editHistory(messageId: Long): Flow<List<TgMessageEdit>>
     /** Adds the emoji reaction, or removes it if already chosen by the user. */
     suspend fun toggleReaction(chatId: Long, messageId: Long, emoji: String, topicId: Int = 0)
+    /** Forwards the message to another chat. Returns false if TDLib rejected it. */
+    suspend fun forwardMessage(toChatId: Long, fromChatId: Long, messageId: Long): Boolean
     fun setOpenChat(chatId: Long)
 }
