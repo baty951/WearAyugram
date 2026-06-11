@@ -17,6 +17,14 @@ data class TgMessage(
     val isRead: Boolean = false,
     // null = never deleted, non-null = deleted locally by anti-revoke
     val deletedLocally: Boolean = false,
+    val reactions: List<TgReaction> = emptyList(),
+)
+
+@Immutable
+data class TgReaction(
+    val emoji: String,
+    val count: Int,
+    val isChosen: Boolean,
 )
 
 @Immutable

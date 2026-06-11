@@ -8,6 +8,7 @@ import su.kirian.wearayugram.domain.model.MessageContent
 import su.kirian.wearayugram.domain.model.TgChat
 import su.kirian.wearayugram.domain.model.TgChatFolder
 import su.kirian.wearayugram.domain.model.TgMessage
+import su.kirian.wearayugram.domain.model.TgReaction
 import su.kirian.wearayugram.domain.model.TgTopic
 import su.kirian.wearayugram.domain.model.TgUser
 
@@ -32,8 +33,17 @@ fun TdApi.Message.toDomain(senderName: String, lastReadOutboxMessageId: Long = 0
     date = date.toLong(),
     isOutgoing = isOutgoing,
     isEdited = editDate > 0,
-    isRead = isOutgoing && id <= lastReadOutboxMessageId
+    isRead = isOutgoing && id <= lastReadOutboxMessageId,
+    reactions = interactionInfo?.reactions.toDomainReactions()
 )
+
+// Custom-emoji reactions need sticker rendering, so only plain emoji ones are shown.
+fun TdApi.MessageReactions?.toDomainReactions(): List<TgReaction> =
+    this?.reactions.orEmpty().mapNotNull { r ->
+        (r.type as? TdApi.ReactionTypeEmoji)?.let {
+            TgReaction(emoji = it.emoji, count = r.totalCount, isChosen = r.isChosen)
+        }
+    }
 
 fun TdApi.ForumTopic.toDomain(): TgTopic = TgTopic(
     id = info.forumTopicId,

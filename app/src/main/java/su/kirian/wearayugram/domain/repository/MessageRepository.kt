@@ -27,5 +27,7 @@ interface MessageRepository {
     suspend fun downloadDocument(chatId: Long, messageId: Long, topicId: Int = 0): String?
     /** Saved pre-edit versions of the message, oldest first. */
     fun editHistory(messageId: Long): Flow<List<TgMessageEdit>>
+    /** Adds the emoji reaction, or removes it if already chosen by the user. */
+    suspend fun toggleReaction(chatId: Long, messageId: Long, emoji: String, topicId: Int = 0)
     fun setOpenChat(chatId: Long)
 }

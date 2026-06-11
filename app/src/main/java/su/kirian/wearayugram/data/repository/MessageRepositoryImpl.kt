@@ -29,6 +29,7 @@ import su.kirian.wearayugram.domain.model.TgMessageEdit
 import su.kirian.wearayugram.data.tdlib.FileDownloader
 import su.kirian.wearayugram.data.tdlib.TelegramClient
 import su.kirian.wearayugram.data.tdlib.toDomain
+import su.kirian.wearayugram.data.tdlib.toDomainReactions
 import su.kirian.wearayugram.domain.model.MessageContent
 import su.kirian.wearayugram.domain.model.TgMessage
 import su.kirian.wearayugram.domain.repository.MessageRepository
@@ -100,6 +101,19 @@ class MessageRepositoryImpl(
     init {
         client.updatesOf<TdApi.UpdateChatNotificationSettings>()
             .onEach { mutedChats[it.chatId] = isMutedSettings(it.notificationSettings) }
+            .launchIn(scope)
+
+        client.updatesOf<TdApi.UpdateMessageInteractionInfo>()
+            .onEach { update ->
+                val reactions = update.interactionInfo?.reactions.toDomainReactions()
+                flowsOfChat(update.chatId).forEach { flow ->
+                    flow.update { list ->
+                        list.map {
+                            if (it.id == update.messageId) it.copy(reactions = reactions) else it
+                        }
+                    }
+                }
+            }
             .launchIn(scope)
 
         client.updatesOf<TdApi.UpdateChatReadOutbox>()
@@ -456,6 +470,20 @@ class MessageRepositoryImpl(
             else photo.fullFileId
         // Fall back to the already-downloaded chat-size file rather than nothing.
         return fileDownloader.download(fileId) ?: photo.localPath
+    }
+
+    override suspend fun toggleReaction(chatId: Long, messageId: Long, emoji: String, topicId: Int) {
+        val chosen = flowOf(chatId, topicId).value.firstOrNull { it.id == messageId }
+            ?.reactions?.firstOrNull { it.emoji == emoji }?.isChosen == true
+        // The resulting UpdateMessageInteractionInfo refreshes the bubble; the chat
+        // may forbid this reaction (restricted set) — then the call just fails.
+        runCatching {
+            if (chosen) {
+                client.send(TdApi.RemoveMessageReaction(chatId, messageId, TdApi.ReactionTypeEmoji(emoji)))
+            } else {
+                client.send(TdApi.AddMessageReaction(chatId, messageId, TdApi.ReactionTypeEmoji(emoji), false, true))
+            }
+        }
     }
 
     override suspend fun markAsRead(chatId: Long, messageIds: LongArray) {

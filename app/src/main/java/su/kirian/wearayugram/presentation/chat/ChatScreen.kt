@@ -11,6 +11,7 @@ import androidx.core.content.ContextCompat
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -38,6 +39,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -68,6 +70,7 @@ import su.kirian.wearayugram.WearAyugramApp
 import su.kirian.wearayugram.presentation.Routes
 import su.kirian.wearayugram.domain.model.MessageContent
 import su.kirian.wearayugram.domain.model.TgMessage
+import su.kirian.wearayugram.domain.model.TgReaction
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -213,6 +216,10 @@ fun ChatScreen(navController: NavController, chatId: Long, topicId: Int = 0) {
         ) {
             items(messages, key = { it.id }) { message ->
                 val content = message.content
+                // Long-press on any bubble opens the reaction picker.
+                val openReactions: () -> Unit = {
+                    navController.navigate(Routes.reactions(chatId, message.id, topicId))
+                }
                 // Deleted photos keep the textual "🚫 медиа" bubble.
                 if (content is MessageContent.Voice && !message.deletedLocally) {
                     VoiceBubble(
@@ -222,6 +229,7 @@ fun ChatScreen(navController: NavController, chatId: Long, topicId: Int = 0) {
                         isLoading = loadingVoiceId == message.id,
                         positionSec = if (playingVoiceId == message.id) voicePositionSec else 0,
                         onTap = { viewModel.toggleVoice(message) },
+                        onLongPress = openReactions,
                     )
                 } else if (content is MessageContent.Video && !message.deletedLocally) {
                     VideoBubble(
@@ -235,6 +243,7 @@ fun ChatScreen(navController: NavController, chatId: Long, topicId: Int = 0) {
                         circular = false,
                         onThumbNeeded = { viewModel.downloadVideoThumb(message.id) },
                         onOpen = { navController.navigate(Routes.videoPlay(chatId, message.id, topicId)) },
+                        onLongPress = openReactions,
                     )
                 } else if (content is MessageContent.VideoNote && !message.deletedLocally) {
                     VideoBubble(
@@ -247,6 +256,7 @@ fun ChatScreen(navController: NavController, chatId: Long, topicId: Int = 0) {
                         circular = true,
                         onThumbNeeded = { viewModel.downloadVideoThumb(message.id) },
                         onOpen = { navController.navigate(Routes.videoPlay(chatId, message.id, topicId)) },
+                        onLongPress = openReactions,
                     )
                 } else if (content is MessageContent.Animation && !message.deletedLocally) {
                     VideoBubble(
@@ -261,6 +271,7 @@ fun ChatScreen(navController: NavController, chatId: Long, topicId: Int = 0) {
                         onThumbNeeded = { viewModel.downloadVideoThumb(message.id) },
                         // GIFs loop in the player like in every Telegram client.
                         onOpen = { navController.navigate(Routes.videoPlay(chatId, message.id, topicId, loop = true)) },
+                        onLongPress = openReactions,
                     )
                 } else if (content is MessageContent.Document && !message.deletedLocally) {
                     DocumentBubble(
@@ -276,12 +287,14 @@ fun ChatScreen(navController: NavController, chatId: Long, topicId: Int = 0) {
                                 ({ navController.navigate(Routes.videoPlay(chatId, message.id, topicId)) })
                             else -> null
                         },
+                        onLongPress = openReactions,
                     )
                 } else if (content is MessageContent.Sticker && !message.deletedLocally && content.fileId != 0) {
                     StickerBubble(
                         message = message,
                         sticker = content,
                         onDownload = { viewModel.downloadSticker(message.id) },
+                        onLongPress = openReactions,
                     )
                 } else if (content is MessageContent.Photo && !message.deletedLocally) {
                     PhotoBubble(
@@ -290,6 +303,7 @@ fun ChatScreen(navController: NavController, chatId: Long, topicId: Int = 0) {
                         autoload = photoAutoload,
                         onDownload = { viewModel.downloadPhoto(message.id) },
                         onOpen = { navController.navigate(Routes.photoView(chatId, message.id, topicId)) },
+                        onLongPress = openReactions,
                     )
                 } else {
                     MessageBubble(
@@ -298,6 +312,7 @@ fun ChatScreen(navController: NavController, chatId: Long, topicId: Int = 0) {
                         onOpenHistory = if (message.isEdited) {
                             { navController.navigate(Routes.editHistory(message.id)) }
                         } else null,
+                        onLongPress = openReactions,
                     )
                 }
             }
@@ -306,7 +321,11 @@ fun ChatScreen(navController: NavController, chatId: Long, topicId: Int = 0) {
 }
 
 @Composable
-private fun MessageBubble(message: TgMessage, onOpenHistory: (() -> Unit)? = null) {
+private fun MessageBubble(
+    message: TgMessage,
+    onOpenHistory: (() -> Unit)? = null,
+    onLongPress: (() -> Unit)? = null,
+) {
     val isOut = message.isOutgoing
     // A single Text node renders reliably as a TransformingLazyColumn item, while a
     // raw Column collapses to one visible item. So the whole bubble is ONE Text built
@@ -356,6 +375,7 @@ private fun MessageBubble(message: TgMessage, onOpenHistory: (() -> Unit)? = nul
                 val edited = if (message.isEdited) " ✎" else ""
                 append("   " + formatMsgTime(message.date) + edited + readMark(message))
             }
+            appendReactions(message.reactions, chosenColor = senderColor, normalColor = timeColor)
         }
     }
 
@@ -383,7 +403,12 @@ private fun MessageBubble(message: TgMessage, onOpenHistory: (() -> Unit)? = nul
                 )
             )
             .background(bubbleColor)
-            .let { if (onOpenHistory != null) it.clickable(onClick = onOpenHistory) else it }
+            .pointerInput(message) {
+                detectTapGestures(
+                    onTap = { onOpenHistory?.invoke() },
+                    onLongPress = { onLongPress?.invoke() },
+                )
+            }
             .padding(horizontal = 12.dp, vertical = 7.dp)
     )
 }
@@ -396,6 +421,7 @@ private fun VoiceBubble(
     isLoading: Boolean,
     positionSec: Int,
     onTap: () -> Unit,
+    onLongPress: (() -> Unit)? = null,
 ) {
     val isOut = message.isOutgoing
     val cs = MaterialTheme.colorScheme
@@ -423,6 +449,7 @@ private fun VoiceBubble(
             withStyle(SpanStyle(color = textColor.copy(alpha = 0.55f), fontSize = 9.sp)) {
                 append("   " + formatMsgTime(message.date) + readMark(message))
             }
+            appendReactions(message.reactions, chosenColor = cs.tertiary, normalColor = textColor.copy(alpha = 0.55f))
         }
     }
 
@@ -447,7 +474,12 @@ private fun VoiceBubble(
                 )
             )
             .background(bubbleColor)
-            .clickable(onClick = onTap)
+            .pointerInput(message) {
+                detectTapGestures(
+                    onTap = { onTap() },
+                    onLongPress = { onLongPress?.invoke() },
+                )
+            }
             .padding(horizontal = 12.dp, vertical = 7.dp)
     )
 }
@@ -457,6 +489,7 @@ private fun DocumentBubble(
     message: TgMessage,
     doc: MessageContent.Document,
     onOpen: (() -> Unit)?,
+    onLongPress: (() -> Unit)? = null,
 ) {
     val isOut = message.isOutgoing
     val cs = MaterialTheme.colorScheme
@@ -480,6 +513,7 @@ private fun DocumentBubble(
             withStyle(SpanStyle(color = textColor.copy(alpha = 0.55f), fontSize = 9.sp)) {
                 append("   " + formatMsgTime(message.date) + readMark(message))
             }
+            appendReactions(message.reactions, chosenColor = cs.tertiary, normalColor = textColor.copy(alpha = 0.55f))
         }
     }
 
@@ -504,7 +538,12 @@ private fun DocumentBubble(
                 )
             )
             .background(if (isOut) cs.primaryContainer else cs.surfaceContainerHigh)
-            .let { if (onOpen != null) it.clickable(onClick = onOpen) else it }
+            .pointerInput(message) {
+                detectTapGestures(
+                    onTap = { onOpen?.invoke() },
+                    onLongPress = { onLongPress?.invoke() },
+                )
+            }
             .padding(horizontal = 12.dp, vertical = 7.dp)
     )
 }
@@ -520,6 +559,7 @@ private fun StickerBubble(
     message: TgMessage,
     sticker: MessageContent.Sticker,
     onDownload: () -> Unit,
+    onLongPress: (() -> Unit)? = null,
 ) {
     val isOut = message.isOutgoing
     val cs = MaterialTheme.colorScheme
@@ -545,7 +585,10 @@ private fun StickerBubble(
                 end = if (isOut) 8.dp else 32.dp,
                 top = 3.dp,
                 bottom = 3.dp
-            ),
+            )
+            .pointerInput(message) {
+                detectTapGestures(onLongPress = { onLongPress?.invoke() })
+            },
         horizontalAlignment = if (isOut) Alignment.End else Alignment.Start,
     ) {
         val bmp = bitmap
@@ -562,11 +605,19 @@ private fun StickerBubble(
             // Emoji stand-in while the image downloads/decodes.
             Text(text = sticker.emoji, fontSize = 48.sp)
         }
-        Text(
-            text = formatMsgTime(message.date) + readMark(message),
-            fontSize = 9.sp,
-            color = cs.onSurface.copy(alpha = 0.55f),
-        )
+        val meta = remember(message) {
+            buildAnnotatedString {
+                withStyle(SpanStyle(color = cs.onSurface.copy(alpha = 0.55f), fontSize = 9.sp)) {
+                    append(formatMsgTime(message.date) + readMark(message))
+                }
+                appendReactions(
+                    message.reactions,
+                    chosenColor = cs.tertiary,
+                    normalColor = cs.onSurface.copy(alpha = 0.55f),
+                )
+            }
+        }
+        Text(text = meta, lineHeight = 14.sp)
     }
 }
 
@@ -581,6 +632,7 @@ private fun VideoBubble(
     circular: Boolean,
     onThumbNeeded: () -> Unit,
     onOpen: () -> Unit,
+    onLongPress: (() -> Unit)? = null,
 ) {
     val isOut = message.isOutgoing
     val cs = MaterialTheme.colorScheme
@@ -609,6 +661,7 @@ private fun VideoBubble(
                 if (caption.isNotEmpty()) append("  ")
                 append(formatMsgTime(message.date) + readMark(message))
             }
+            appendReactions(message.reactions, chosenColor = cs.tertiary, normalColor = textColor.copy(alpha = 0.55f))
         }
     }
 
@@ -623,7 +676,12 @@ private fun VideoBubble(
             )
             .clip(RoundedCornerShape(16.dp))
             .background(if (isOut) cs.primaryContainer else cs.surfaceContainerHigh)
-            .clickable(onClick = onOpen)
+            .pointerInput(message) {
+                detectTapGestures(
+                    onTap = { onOpen() },
+                    onLongPress = { onLongPress?.invoke() },
+                )
+            }
     ) {
         Box(
             Modifier
@@ -673,6 +731,7 @@ private fun PhotoBubble(
     autoload: Boolean,
     onDownload: () -> Unit,
     onOpen: () -> Unit,
+    onLongPress: (() -> Unit)? = null,
 ) {
     val isOut = message.isOutgoing
     val cs = MaterialTheme.colorScheme
@@ -709,6 +768,7 @@ private fun PhotoBubble(
                 if (photo.caption.isNotEmpty()) append("  ")
                 append(formatMsgTime(message.date) + readMark(message))
             }
+            appendReactions(message.reactions, chosenColor = cs.tertiary, normalColor = textColor.copy(alpha = 0.55f))
         }
     }
 
@@ -725,7 +785,12 @@ private fun PhotoBubble(
             )
             .clip(RoundedCornerShape(16.dp))
             .background(if (isOut) cs.primaryContainer else cs.surfaceContainerHigh)
-            .clickable { if (photo.localPath == null) onDownload() else onOpen() }
+            .pointerInput(message) {
+                detectTapGestures(
+                    onTap = { if (photo.localPath == null) onDownload() else onOpen() },
+                    onLongPress = { onLongPress?.invoke() },
+                )
+            }
     ) {
         Box(Modifier.fillMaxWidth().aspectRatio(aspect)) {
             val shown = bitmap ?: mini
@@ -753,6 +818,25 @@ private fun PhotoBubble(
             lineHeight = 16.sp,
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
         )
+    }
+}
+
+// Reactions line under the bubble body: "👍 3  ❤ 1", own reaction highlighted.
+private fun androidx.compose.ui.text.AnnotatedString.Builder.appendReactions(
+    reactions: List<TgReaction>,
+    chosenColor: androidx.compose.ui.graphics.Color,
+    normalColor: androidx.compose.ui.graphics.Color,
+) {
+    if (reactions.isEmpty()) return
+    append("\n")
+    for (r in reactions) {
+        withStyle(
+            SpanStyle(
+                color = if (r.isChosen) chosenColor else normalColor,
+                fontSize = 11.sp,
+                fontWeight = if (r.isChosen) FontWeight.SemiBold else FontWeight.Normal,
+            )
+        ) { append("${r.emoji} ${r.count}  ") }
     }
 }
 
