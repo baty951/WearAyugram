@@ -13,13 +13,16 @@ import su.kirian.wearayugram.domain.model.TgReaction
 import su.kirian.wearayugram.domain.model.TgTopic
 import su.kirian.wearayugram.domain.model.TgUser
 
-fun TdApi.Chat.toDomain(): TgChat = TgChat(
+// isMuted must be resolved by the caller (ChatMuteResolver): a chat with
+// useDefaultMuteFor=true follows its category default, which a plain
+// notificationSettings.muteFor check can't see.
+fun TdApi.Chat.toDomain(isMuted: Boolean): TgChat = TgChat(
     id = id,
     title = title,
     lastMessage = lastMessage?.content?.toPreviewText(),
     lastMessageTime = lastMessage?.date?.toLong() ?: 0L,
     unreadCount = unreadCount,
-    isMuted = notificationSettings.muteFor > 0,
+    isMuted = isMuted,
     photoPath = photo?.small?.local?.path
         ?.takeIf { photo?.small?.local?.isDownloadingCompleted == true },
     type = type.toChatType()

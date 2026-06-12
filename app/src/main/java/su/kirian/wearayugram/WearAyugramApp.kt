@@ -20,6 +20,7 @@ import su.kirian.wearayugram.data.repository.AuthRepositoryImpl
 import su.kirian.wearayugram.data.repository.ChatRepositoryImpl
 import su.kirian.wearayugram.data.repository.MessageRepositoryImpl
 import su.kirian.wearayugram.data.service.TelegramForegroundService
+import su.kirian.wearayugram.data.tdlib.ChatMuteResolver
 import su.kirian.wearayugram.data.tdlib.FileDownloader
 import su.kirian.wearayugram.data.tdlib.TelegramClient
 import su.kirian.wearayugram.domain.repository.AuthRepository
@@ -68,9 +69,11 @@ class WearAyugramApp : Application() {
         // AuthRepositoryImpl must be created immediately after TelegramClient so it
         // catches the very first WaitTdlibParameters event and sends SetTdlibParameters
         authRepository = AuthRepositoryImpl(telegramClient, dbDir)
-        chatRepository = ChatRepositoryImpl(telegramClient)
+        val muteResolver = ChatMuteResolver(telegramClient)
+        chatRepository = ChatRepositoryImpl(telegramClient, muteResolver)
         fileDownloader = FileDownloader(telegramClient)
-        messageRepository = MessageRepositoryImpl(telegramClient, applicationContext, database, fileDownloader)
+        messageRepository =
+            MessageRepositoryImpl(telegramClient, applicationContext, database, fileDownloader, muteResolver)
 
         createNotificationChannels()
         startForegroundService(Intent(this, TelegramForegroundService::class.java))

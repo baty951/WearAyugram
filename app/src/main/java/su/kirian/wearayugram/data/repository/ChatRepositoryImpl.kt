@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import org.drinkless.tdlib.TdApi
+import su.kirian.wearayugram.data.tdlib.ChatMuteResolver
 import su.kirian.wearayugram.data.tdlib.TelegramClient
 import su.kirian.wearayugram.data.tdlib.toDomain
 import su.kirian.wearayugram.domain.model.TgChat
@@ -24,9 +25,15 @@ import su.kirian.wearayugram.domain.model.TgTopic
 import su.kirian.wearayugram.data.tdlib.toPreviewText
 import su.kirian.wearayugram.domain.repository.ChatRepository
 
-class ChatRepositoryImpl(private val client: TelegramClient) : ChatRepository {
+class ChatRepositoryImpl(
+    private val client: TelegramClient,
+    private val muteResolver: ChatMuteResolver,
+) : ChatRepository {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    private suspend fun TdApi.Chat.toDomainChat(): TgChat =
+        toDomain(isMuted = muteResolver.isMuted(this))
 
     private val _chatList = MutableStateFlow<List<TgChat>>(emptyList())
     override val chatList: Flow<List<TgChat>> = _chatList.asStateFlow()
@@ -83,6 +90,20 @@ class ChatRepositoryImpl(private val client: TelegramClient) : ChatRepository {
             }
             .launchIn(scope)
 
+        // Mute toggles re-render the chat row (dimmed title), so refresh the chat.
+        client.updatesOf<TdApi.UpdateChatNotificationSettings>()
+            .onEach { update ->
+                if (_chatList.value.any { it.id == update.chatId }) refreshQueue.send(update.chatId)
+            }
+            .launchIn(scope)
+
+        // A category default changed ("all channels" muted etc.) — every shown chat
+        // following that default may flip, so re-resolve them all. Rare, and the
+        // GetChats behind refreshQueue are answered from TDLib's local cache.
+        client.updatesOf<TdApi.UpdateScopeNotificationSettings>()
+            .onEach { _chatList.value.forEach { chat -> refreshQueue.send(chat.id) } }
+            .launchIn(scope)
+
         // Position changes reorder the whole list; conflate bursts so a storm of
         // updates costs one full reload per ~1s instead of one per update
         // (loadChats = GetChats + 30 sequential GetChat calls).
@@ -112,15 +133,15 @@ class ChatRepositoryImpl(private val client: TelegramClient) : ChatRepository {
                     runCatching { client.send(TdApi.GetChat(id)) }.getOrNull()
                 }
                 if (fetchedRaw.isNotEmpty()) {
+                    val byId = fetchedRaw.associate { it.id to it.toDomainChat() }
                     _chatList.update { current ->
-                        val byId = fetchedRaw.associate { it.id to it.toDomain() }
                         val updated = current.map { byId[it.id] ?: it }
                         // Only chats that belong to the shown list may be prepended —
                         // otherwise a message in any chat would leak it into the
                         // currently selected folder.
                         val newOnes = fetchedRaw
                             .filter { raw -> current.none { it.id == raw.id } && raw.belongsToCurrentList() }
-                            .map { it.toDomain() }
+                            .mapNotNull { byId[it.id] }
                         newOnes + updated
                     }
                 }
@@ -134,7 +155,7 @@ class ChatRepositoryImpl(private val client: TelegramClient) : ChatRepository {
         val result = runCatching { client.send(TdApi.GetChats(list, limit)) }.getOrNull() ?: return
         val chats = mutableListOf<TgChat>()
         for (id in result.chatIds) {
-            runCatching { client.send(TdApi.GetChat(id)).toDomain() }.getOrNull()?.let { chats.add(it) }
+            runCatching { client.send(TdApi.GetChat(id)).toDomainChat() }.getOrNull()?.let { chats.add(it) }
         }
         // The folder may have been switched while we fetched 30 sequential GetChats —
         // don't overwrite the new folder's list with stale results.
@@ -155,7 +176,7 @@ class ChatRepositoryImpl(private val client: TelegramClient) : ChatRepository {
     }
 
     override suspend fun getChatById(chatId: Long): TgChat? =
-        runCatching { client.send(TdApi.GetChat(chatId)).toDomain() }.getOrNull()
+        runCatching { client.send(TdApi.GetChat(chatId)).toDomainChat() }.getOrNull()
 
     // Forum-ness can't change without recreating the supergroup, so cache forever.
     private val forumCache = java.util.concurrent.ConcurrentHashMap<Long, Boolean>()
@@ -188,7 +209,7 @@ class ChatRepositoryImpl(private val client: TelegramClient) : ChatRepository {
             client.send(TdApi.SearchPublicChats(query)).chatIds.toList()
         }.getOrDefault(emptyList())
         return (localIds + publicIds).distinct().take(15).mapNotNull { id ->
-            runCatching { client.send(TdApi.GetChat(id)).toDomain() }.getOrNull()
+            runCatching { client.send(TdApi.GetChat(id)).toDomainChat() }.getOrNull()
         }
     }
 

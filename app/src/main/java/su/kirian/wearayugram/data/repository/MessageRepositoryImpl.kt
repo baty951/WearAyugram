@@ -26,6 +26,7 @@ import su.kirian.wearayugram.data.local.AppDatabase
 import su.kirian.wearayugram.data.local.DeletedMessage
 import su.kirian.wearayugram.data.local.MessageEdit
 import su.kirian.wearayugram.domain.model.TgMessageEdit
+import su.kirian.wearayugram.data.tdlib.ChatMuteResolver
 import su.kirian.wearayugram.data.tdlib.FileDownloader
 import su.kirian.wearayugram.data.tdlib.TelegramClient
 import su.kirian.wearayugram.data.tdlib.toDomain
@@ -40,6 +41,7 @@ class MessageRepositoryImpl(
     private val context: Context,
     private val database: AppDatabase,
     private val fileDownloader: FileDownloader,
+    private val muteResolver: ChatMuteResolver,
 ) : MessageRepository {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -116,21 +118,28 @@ class MessageRepositoryImpl(
     // UpdateChatReadOutbox.
     private val readOutbox = java.util.concurrent.ConcurrentHashMap<Long, Long>()
 
-    // chatId -> muted: mute is account-wide (synced from other devices via
-    // notificationSettings), so muted chats must not fire watch notifications.
-    // Seeded lazily from GetChat, kept live by UpdateChatNotificationSettings.
-    private val mutedChats = java.util.concurrent.ConcurrentHashMap<Long, Boolean>()
+    // Mute is account-wide (synced from other devices), so muted chats must not
+    // fire watch notifications. Per-chat settings are seeded lazily from GetChat,
+    // kept live by UpdateChatNotificationSettings; the scope-default part is
+    // delegated to muteResolver.
+    private val chatNotifSettings =
+        java.util.concurrent.ConcurrentHashMap<Long, TdApi.ChatNotificationSettings>()
+    // chatId -> scope constructor (which category default applies to this chat)
+    private val chatScope = java.util.concurrent.ConcurrentHashMap<Long, Int>()
 
-    private fun isMutedSettings(s: TdApi.ChatNotificationSettings): Boolean =
-        // useDefaultMuteFor=true means "follow the scope default", which is unmuted
-        // unless the user muted a whole chat category — not the per-chat mute we
-        // are asked to respect here.
-        !s.useDefaultMuteFor && s.muteFor > 0
-
-    private suspend fun isChatMuted(chatId: Long): Boolean =
-        mutedChats[chatId] ?: runCatching {
-            isMutedSettings(client.send(TdApi.GetChat(chatId)).notificationSettings)
-        }.getOrDefault(false).also { mutedChats[chatId] = it }
+    private suspend fun isChatMuted(chatId: Long): Boolean {
+        var settings = chatNotifSettings[chatId]
+        if (settings == null || !chatScope.containsKey(chatId)) {
+            runCatching { client.send(TdApi.GetChat(chatId)) }.getOrNull()?.let { chat ->
+                settings = chat.notificationSettings
+                chatNotifSettings[chatId] = chat.notificationSettings
+                chatScope[chatId] = muteResolver.scopeOf(chat.type).constructor
+            }
+        }
+        val s = settings ?: return false
+        val scopeConstructor = chatScope[chatId] ?: return false
+        return muteResolver.isMuted(s, scopeConstructor)
+    }
 
     override fun setOpenChat(chatId: Long) { openChatId = chatId }
 
@@ -141,7 +150,7 @@ class MessageRepositoryImpl(
 
     init {
         client.updatesOf<TdApi.UpdateChatNotificationSettings>()
-            .onEach { mutedChats[it.chatId] = isMutedSettings(it.notificationSettings) }
+            .onEach { chatNotifSettings[it.chatId] = it.notificationSettings }
             .launchIn(scope)
 
         // Inline content changes: poll vote counts, media replacing placeholders etc.
@@ -273,6 +282,7 @@ class MessageRepositoryImpl(
                 if (chatFlows.isEmpty()) return@onEach
                 val antiRevoke = runCatching { AntiRevokeManager.isEnabled.first() }.getOrDefault(true)
                 val deleteNotify = runCatching { DeleteNotifyManager.isEnabled.first() }.getOrDefault(true)
+                val chatMuted = isChatMuted(update.chatId)
                 val deleted = update.messageIds.toHashSet()
 
                 chatFlows.forEach { flow ->
@@ -298,7 +308,7 @@ class MessageRepositoryImpl(
                                 }
                                 // Send delete notification if incoming and not in open chat
                                 if (deleteNotify && !msg.isOutgoing && msg.chatId != openChatId &&
-                                    mutedChats[msg.chatId] != true
+                                    !chatMuted
                                 ) {
                                     val originalText2 = when (val c = msg.content) {
                                         is MessageContent.Text -> c.text
